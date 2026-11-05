@@ -1,3 +1,5 @@
+> 本仓库是基于 [TF49/AI-Helper](https://github.com/TF49/AI-Helper) 的二次开发版，当前版本 **0.5.18**。发行仓库为 [u](https://github.com/xiaoer0215/u)、[n](https://github.com/xiaoer0215/n)、[y](https://github.com/xiaoer0215/y)，具体品牌和构建配置见 [brands/README.md](brands/README.md)。下方架构与历史介绍保留上游说明。
+
 <p align="center">
   <img src="./public/brand-logo.png" alt="AI Helper Logo" width="260" />
 </p>
@@ -181,14 +183,14 @@ sequenceDiagram
 
 ## 📦 下载与安装 (Downloads)
 
-前往 [官网下载中心](https://helper.bob-api.com) 或 [GitHub Releases](https://github.com/TF49/AI-Helper/releases/latest) 下载最新发布的安装包：
+从对应品牌的私有 Release 下载： [Uocode](https://github.com/xiaoer0215/u/releases/tag/v0.5.18)、[Nez Api](https://github.com/xiaoer0215/n/releases/tag/v0.5.18)、[Yusr.ai](https://github.com/xiaoer0215/y/releases/tag/v0.5.18)。需要登录有权限的 GitHub 账号。
 
 ### 🪟 Windows (Windows 10 / 11 64位)
 
 | 安装包类型 | 下载通道 | 说明 |
 | :--- | :--- | :--- |
-| **🚀 标准安装版 (Setup.exe)** | [阿里云 OSS 千兆通道](https://bobdong.oss-cn-beijing.aliyuncs.com/desktop/AI-Helper-v1.0.57-Windows-x64-Setup.exe) · [本站直链](https://helper.bob-api.com/downloads/AI-Helper-v1.0.57-Windows-x64-Setup.exe) · [国内镜像](https://ghfast.top/https://github.com/TF49/AI-Helper/releases/download/v1.0.57/AI-Helper-v1.0.57-Windows-x64-Setup.exe) | 推荐使用！含桌面快捷方式、静默自动更新与运行库检测 |
-| **💼 绿色便携版 (Standalone.zip)** | [官方直链下载](https://helper.bob-api.com/downloads/AI-Helper-v1.0.57-Windows-x64-Standalone.zip) · [国内加速镜像](https://ghfast.top/https://github.com/TF49/AI-Helper/releases/download/v1.0.57/AI-Helper-v1.0.57-Windows-x64-Standalone.zip) | 解压即用，无须安装，不污染注册表，适合企业内网环境 |
+| **标准安装版 (Setup.exe)** | 当前品牌 Release 的 `*-Windows-x64-Setup.exe` | 包含快捷方式和运行库检测 |
+| **便携版 (Standalone.zip)** | 当前品牌 Release 的 `*-Windows-x64-Standalone.zip` | 解压后运行包内 EXE，配置仍保存在用户目录 |
 
 > 📌 **Windows 环境要求**：系统需预装 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)（Win11 自带）。
 
@@ -196,8 +198,10 @@ sequenceDiagram
 
 | 架构类型 | 下载文件 | 说明 |
 | :--- | :--- | :--- |
-| **🍎 Apple Silicon (推荐)** | `AI-Helper-v1.0.57-macOS-aarch64.dmg` | 专为 M1 / M2 / M3 / M4 芯片深度原生编译，超低功耗零转译 |
-| **💻 Intel 架构** | `AI-Helper-v1.0.57-macOS-x64.dmg` | 兼容所有 Intel 架构 Mac 电脑，体验一致 |
+| **Apple Silicon** | `*-v0.5.18-macOS-aarch64.dmg` | Apple 芯片 Mac |
+| **Intel** | `*-v0.5.18-macOS-x64.dmg` | Intel 芯片 Mac |
+
+当前版本未开启自动更新；macOS 包尚未做 Apple Developer 公证。Tauri 更新包使用各品牌独立密钥签名，发布包同时提供 SHA-256 校验文件。
 
 ---
 
@@ -206,19 +210,20 @@ sequenceDiagram
 如果你希望在本地编译调试或为 AI Helper 贡献代码，请参考以下指南：
 
 ### 1. 环境准备
-- [Node.js](https://nodejs.org/) (>= 18.0.0) & [pnpm](https://pnpm.io/) (>= 9.0)
-- [Rust](https://www.rust-lang.org/) (推荐安装最新 stable 工具链与 `cargo`)
+- [Node.js](https://nodejs.org/) (>= 22) & [pnpm](https://pnpm.io/) (10.12.3)
+- [Rust](https://www.rust-lang.org/) (1.95.0，见 `rust-toolchain.toml`)
 - **Windows**: Visual Studio C++ Build Tools (包含 Windows 10/11 SDK)
 - **macOS**: Xcode Command Line Tools (`xcode-select --install`)
 
 ### 2. 克隆项目与安装依赖
 ```bash
 # 克隆代码仓库
-git clone https://github.com/TF49/AI-Helper.git
-cd AI-Helper
+git clone https://github.com/xiaoer0215/u.git
+cd u
 
 # 使用 pnpm 安装前端依赖
 pnpm install
+node scripts/select-brand.mjs uocode
 ```
 
 ### 3. 启动本地桌面调试
