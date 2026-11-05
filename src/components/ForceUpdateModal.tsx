@@ -86,8 +86,8 @@ function getAcceleratedDownloadUrls(version?: string) {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-// 二开版本尚未配置独立发布源，禁止下载原项目的安装包。
-const APP_UPDATES_ENABLED = false;
+// 每个品牌使用自己的站点清单和签名包；更新源由 brands/versions.json 注入。
+const APP_UPDATES_ENABLED = true;
 
 export function useAppUpdater() {
   const [phase, setPhase] = useState<UpdatePhase>("idle");

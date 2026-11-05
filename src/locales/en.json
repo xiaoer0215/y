@@ -1120,7 +1120,7 @@
   "ui.cdaacda471a5": "Application key failed, please check the tool environment and try again",
   "ui.cdd99a3b7e7d": "There are currently no available groups for the current account.",
   "ui.cdfb82b464c9": "save key",
-  "ui.cdff2030ab00": "Automatic updates are not enabled for the current version",
+  "ui.cdff2030ab00": "Updates are available in the desktop app",
   "ui.ce1febd0cdeb": "Request ID",
   "ui.ce575e953955": "Retrieve local Accio Work client running environment and ~/.ai-helper/accio_config.json...",
   "ui.cf2c91a165a5": "Accio Work client",

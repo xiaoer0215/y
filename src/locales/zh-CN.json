@@ -1120,7 +1120,7 @@
   "ui.cdaacda471a5": "应用密钥失败，请检查工具环境后重试",
   "ui.cdd99a3b7e7d": "当前账号暂无可用分组。",
   "ui.cdfb82b464c9": "保存密钥",
-  "ui.cdff2030ab00": "当前版本未启用自动更新",
+  "ui.cdff2030ab00": "当前环境仅支持桌面版更新",
   "ui.ce1febd0cdeb": "请求 ID",
   "ui.ce575e953955": "检索本地 Accio Work 客户端运行环境与 ~/.ai-helper/accio_config.json...",
   "ui.cf2c91a165a5": "Accio Work 客户端",

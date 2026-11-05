@@ -34,6 +34,6 @@ GitHub 发布流水线按仓库名称选择品牌：`xiaoer0215/u` 对应 Uocode
 
 每个仓库分别配置 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` Actions Secrets。私钥保存在发布者本地忽略目录 `output/release-signing`，不可提交。
 
-当前应用自动更新开关关闭。私有 Release 下载需要 GitHub 授权；正式启用公开更新前，需把签名安装包和 `latest.json` 部署到对应品牌网站并验证下载。禁止将私有仓库令牌编译到客户端。
+当前应用已启用远程更新。客户端优先读取对应品牌网站的 `latest.json`，清单中的安装包 URL 必须是站点可直接访问的公开下载地址；GitHub 私有 Release 只作为发布源，不应把访问令牌编译进客户端。部署新版本时同步上传清单、签名包和安装包，再用客户端“检查更新”验证。
 
 macOS 包包含 Tauri 更新签名，但尚未做 Apple Developer 签名和公证，首次打开可能需要在系统“隐私与安全性”中允许。
