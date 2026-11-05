@@ -1,6 +1,6 @@
 # Desktop Client
 
-三个品牌共用的 Tauri v2 + React + Rust 桌面客户端，当前版本 `0.5.18`。
+三个品牌共用的 Tauri v2 + React + Rust 桌面客户端，当前版本 `0.5.19`。
 
 ## 发行仓库
 
@@ -10,7 +10,7 @@
 | [n](https://github.com/xiaoer0215/n) | 𝓝ě𝔃 𝓐𝓹ǐ | https://ne.aineapi.com |
 | [y](https://github.com/xiaoer0215/y) | Yusr.ai | https://www.yusr.ai |
 
-每个仓库的 `v0.5.18` Release 均包含 Windows x64 安装包、便携包，以及 macOS Apple Silicon / Intel 安装包。私有仓库下载需要 GitHub 访问权限。
+每个仓库的 `v0.5.19` Release 均包含 Windows x64 安装包、便携包，以及 macOS Apple Silicon / Intel 安装包。私有仓库下载需要 GitHub 访问权限。
 
 ## 本地构建
 
