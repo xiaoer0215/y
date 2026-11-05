@@ -1,0 +1,663 @@
+import { t, useLocale } from "../lib/i18n";
+/**
+ * ForceUpdateModal — 自动更新组件
+ *
+ * 全面升级为「多源容灾竞速 + 死代理自愈」机制：
+ *   1. 应用启动静默检测（毫秒级延时，2.5s 超时强制放行不阻断用户启动）
+ *   2. 无更新 → 完全静默，不弹窗、不打扰用户
+ *   3. 发现更新 → 立即展示更新卡片，并自动调用 Rust 强化版多源容灾下载器
+ *   4. 容灾降级 → 官方直链、ghfast、gh-proxy、ghproxy.net 自动竞速探测；若某源受限自动秒级切换至下一可用镜像
+ *   5. 下载进度实时显示（百分比 + 已下载字节 / 总字节 + 当前连接通道）
+ *   6. 安装完成 → 提示"更新已准备就绪"，提供"立即重启生效"（或 2s 后自动重启）
+ *   7. 异常处理 → 显示错误信息，提供重试按键与全部多通道高速下载入口
+ *   8. 状态栏手动触发 → 点击"检查更新"若已是最新版则通过 Toast 明确提示
+ */
+
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  DownloadCloud,
+  RefreshCw,
+  AlertTriangle,
+  ExternalLink,
+  Power,
+  Sparkles,
+  CheckCircle2,
+  X,
+  RotateCcw,
+} from "lucide-react";
+import { motion, AnimatePresence } from "motion/react";
+import { relaunch, exit } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
+import { toast } from "sonner";
+import {
+  openUrl,
+  isTauri,
+  downloadAndInstallUpdate,
+  type UpdateDownloadEvent,
+  type CandidateMirror,
+} from "../lib/api";
+import { isMac } from "../lib/platform";
+
+// ── 类型定义 ─────────────────────────────────────────────────────────────────
+
+export interface BackendUpdateInfo {
+  has_update: boolean;
+  latest_version: string;
+  current_version: string;
+  download_url: string;
+  release_notes: string;
+  published_at: string;
+  source?: string;
+  proxy_url?: string;
+  candidate_mirrors?: CandidateMirror[];
+}
+
+export type UpdatePhase =
+  | "idle" // 无更新/未激活
+  | "checking" // 检查版本中
+  | "downloading" // 正在下载更新
+  | "installing" // 下载完成，正在安装
+  | "ready" // 安装就绪，等待重启
+  | "error" // 更新失败
+  | "manual"; // 资产未就绪，需手动前往 GitHub 下载
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+const GITHUB_RELEASES_URL = "https://github.com/TF49/AI-Helper/releases/latest";
+
+function getAcceleratedDownloadUrls(version?: string) {
+  if (!version) return [];
+  const cleanVer = version.replace(/^v/, "");
+  const setupName = isMac()
+    ? `AI-Helper-v${cleanVer}-macOS.dmg`
+    : `AI-Helper-v${cleanVer}-Windows-x64-Setup.exe`;
+  return [
+    {
+      name: t("ui.a19b7eef9f72"),
+      url: `https://bobdong.oss-cn-beijing.aliyuncs.com/desktop/${setupName}`,
+    },
+    {
+      name: t("ui.05fb484aacc9"),
+      url: `https://ghfast.top/https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
+    },
+    {
+      name: t("ui.ea38bafd09dc"),
+      url: `https://gh-proxy.com/https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
+    },
+    {
+      name: t("ui.9ea88f9a511e"),
+      url: `https://ghproxy.net/https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
+    },
+    {
+      name: t("ui.eaa0d7eb6adc"),
+      url: `https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
+    },
+  ];
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
+// 二开版本尚未配置独立发布源，禁止下载原项目的安装包。
+const APP_UPDATES_ENABLED = false;
+
+export function useAppUpdater() {
+  const [phase, setPhase] = useState<UpdatePhase>("idle");
+  const [backendInfo, setBackendInfo] = useState<BackendUpdateInfo | null>(
+    null,
+  );
+  const [currentSource, setCurrentSource] = useState<string>("");
+  const [downloadProgress, setDownloadProgress] = useState(0);
+  const [progressBytes, setProgressBytes] = useState(0);
+  const [totalBytes, setTotalBytes] = useState(0);
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isManualChecking, setIsManualChecking] = useState(false);
+  const [isBootCheckComplete, setIsBootCheckComplete] = useState(
+    !isTauri || !APP_UPDATES_ENABLED,
+  );
+
+  const downloadStarted = useRef(false);
+  const hasBootChecked = useRef(false);
+
+  /**
+   * 执行检查与下载流程
+   * @param manual 是否为用户手动点击检查更新
+   */
+  const checkForUpdates = useCallback(async (manual = false) => {
+    if (!isTauri || !APP_UPDATES_ENABLED) {
+      setIsBootCheckComplete(true);
+      if (manual) {
+        setIsManualChecking(false);
+        toast.info(t("ui.cdff2030ab00"));
+      }
+      return;
+    }
+    if (downloadStarted.current) return;
+
+    if (manual) {
+      setIsManualChecking(true);
+    }
+    setErrorMessage("");
+
+    try {
+      // Step 1: 调用 Rust 后端多源版本检测（updater.json -> GitHub API -> Raw -> jsDelivr）
+      const info = await invoke<BackendUpdateInfo>("check_for_updates");
+
+      if (!info.has_update) {
+        setPhase("idle");
+        setIsBootCheckComplete(true);
+        if (manual) {
+          setIsManualChecking(false);
+          toast.success(t("ui.6a4f675d7328", { v0: info.current_version }));
+        }
+        return;
+      }
+
+      // 发现新版本！
+      setBackendInfo(info);
+      if (manual) {
+        setIsManualChecking(false);
+      }
+
+      if (downloadStarted.current) return;
+      downloadStarted.current = true;
+
+      setPhase("downloading");
+      setDownloadProgress(0);
+      setProgressBytes(0);
+      setTotalBytes(0);
+
+      let contentLength = 0;
+
+      // Step 2: 调用 Rust 强化版多源容灾下载器 download_and_install_update
+      // 拥有代理健康嗅探、死代理自动回退直连、多镜像智能容灾降级
+      await downloadAndInstallUpdate(
+        info.latest_version,
+        (event: UpdateDownloadEvent) => {
+          switch (event.event) {
+            case "Started":
+              if (event.data.source) {
+                setCurrentSource(event.data.source);
+              }
+              contentLength = event.data.contentLength ?? 0;
+              setTotalBytes(contentLength);
+              break;
+            case "Progress":
+              setProgressBytes(event.data.downloaded);
+              if (event.data.totalBytes > 0) {
+                setTotalBytes(event.data.totalBytes);
+                setDownloadProgress(
+                  Math.round(
+                    (event.data.downloaded / event.data.totalBytes) * 100,
+                  ),
+                );
+              }
+              break;
+            case "SwitchSource":
+              toast.info(
+                t("ui.dc6e79b0af22", {
+                  v0: event.data.fromSource,
+                  v1: event.data.toSource,
+                }),
+              );
+              setCurrentSource(event.data.toSource);
+              break;
+            case "Finished":
+              setPhase("installing");
+              break;
+          }
+        },
+      );
+
+      // 安装完成，准备重启（在 Windows 下二进制启动器会自动调起安装程序并退出；这里为 UI 状态收尾）
+      setPhase("ready");
+    } catch (err: unknown) {
+      downloadStarted.current = false;
+      if (manual) {
+        setIsManualChecking(false);
+      }
+      const msg = err instanceof Error ? err.message : String(err);
+
+      // 启动时的静默检查如果只是网络不通且无更新，不打扰用户并放行后续初始化
+      if (!downloadStarted.current && !manual) {
+        console.warn("Silent update check skipped:", msg);
+        setPhase("idle");
+        setIsBootCheckComplete(true);
+        return;
+      }
+
+      setErrorMessage(msg || t("ui.18569a10aa19"));
+      setPhase("error");
+    }
+  }, []);
+
+  // 应用启动时快速执行静默检测，确保先检查更新，再决定是否进入初始化
+  useEffect(() => {
+    if (!isTauri || !APP_UPDATES_ENABLED) {
+      setIsBootCheckComplete(true);
+      return;
+    }
+
+    if (hasBootChecked.current) return;
+    hasBootChecked.current = true;
+
+    // 100ms 轻微延时，等待首帧挂载后立即开始检测
+    const timer = setTimeout(() => {
+      void checkForUpdates(false);
+    }, 100);
+
+    // 2.5秒超时兜底：即使极端网络环境卡住检测请求，也确保超时后放行进入主界面/初始化
+    const safetyTimer = setTimeout(() => {
+      setIsBootCheckComplete((prev) => {
+        if (!prev) {
+          console.warn(
+            "Boot update check safety timeout reached, unlocking init/dashboard.",
+          );
+          return true;
+        }
+        return prev;
+      });
+    }, 2500);
+
+    return () => {
+      // 兼容 React 18 StrictMode 模拟挂载-卸载-重挂载
+      hasBootChecked.current = false;
+      clearTimeout(timer);
+      clearTimeout(safetyTimer);
+    };
+  }, [checkForUpdates]);
+
+  const handleRetry = useCallback(() => {
+    downloadStarted.current = false;
+    void checkForUpdates(true);
+  }, [checkForUpdates]);
+
+  const handleRestart = useCallback(async () => {
+    try {
+      await relaunch();
+    } catch {
+      await exit(0);
+    }
+  }, []);
+
+  const handleClose = useCallback(() => {
+    setPhase("idle");
+    setIsBootCheckComplete(true);
+  }, []);
+
+  const handleExit = useCallback(async () => {
+    try {
+      await exit(0);
+    } catch {
+      window.close();
+    }
+  }, []);
+
+  return {
+    phase,
+    backendInfo,
+    currentSource,
+    downloadProgress,
+    progressBytes,
+    totalBytes,
+    errorMessage,
+    isManualChecking,
+    isBootCheckComplete,
+    checkForUpdates,
+    handleRetry,
+    handleRestart,
+    handleClose,
+    handleExit,
+  };
+}
+
+// ── UI 模态框组件 ─────────────────────────────────────────────────────────────
+
+interface ForceUpdateModalProps {
+  phase: UpdatePhase;
+  backendInfo: BackendUpdateInfo | null;
+  currentSource?: string;
+  downloadProgress: number;
+  progressBytes: number;
+  totalBytes: number;
+  errorMessage: string;
+  onRetry: () => void;
+  onRestart: () => void;
+  onClose: () => void;
+  onExit: () => void;
+}
+
+export function ForceUpdateModal({
+  phase,
+  backendInfo,
+  currentSource = "",
+  downloadProgress,
+  progressBytes,
+  totalBytes,
+  errorMessage,
+  onRetry,
+  onRestart,
+  onClose,
+  onExit,
+}: ForceUpdateModalProps) {
+  useLocale();
+  const [restartCountdown, setRestartCountdown] = useState<number | null>(null);
+
+  // 当更新安装完毕就绪时，启动 2 秒倒计时自动重启应用生效（亦可点击立即重启或选择稍后）
+  useEffect(() => {
+    if (phase === "ready") {
+      setRestartCountdown(2);
+      const interval = setInterval(() => {
+        setRestartCountdown((prev) => {
+          if (prev === null || prev <= 1) {
+            clearInterval(interval);
+            onRestart();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(interval);
+    } else {
+      setRestartCountdown(null);
+    }
+  }, [phase, onRestart]);
+
+  const visible =
+    phase === "downloading" ||
+    phase === "installing" ||
+    phase === "ready" ||
+    phase === "error" ||
+    phase === "manual";
+
+  if (!visible) return null;
+
+  const pct = totalBytes > 0 ? Math.min(100, downloadProgress) : 0;
+  const downloadMirrors =
+    backendInfo?.candidate_mirrors && backendInfo.candidate_mirrors.length > 0
+      ? backendInfo.candidate_mirrors
+      : getAcceleratedDownloadUrls(backendInfo?.latest_version);
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        key="update-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        className="fixed inset-0 top-11 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl"
+      >
+        <motion.div
+          initial={{ scale: 0.92, opacity: 0, y: 15 }}
+          animate={{ scale: 1, opacity: 1, y: 0 }}
+          transition={{ type: "spring", stiffness: 350, damping: 28 }}
+          className="relative w-full max-w-lg rounded-2xl border border-blue-500/30 bg-[#0f1322] text-slate-100 shadow-[0_20px_60px_-15px_rgba(30,58,138,0.5)] overflow-hidden"
+        >
+          {/* 顶部流光色条 */}
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500" />
+
+          {/* 右上角关闭按钮 */}
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors z-20 cursor-pointer"
+            title={t("ui.1f55a34a74f1")}
+          >
+            <X size={15} />
+          </button>
+
+          {/* 头部图标与版本展示 */}
+          <div className="p-6 pb-4 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-600/30 to-purple-600/30 border border-blue-500/40 flex items-center justify-center shadow-lg shadow-blue-500/20 mb-3">
+              {phase === "ready" ? (
+                <CheckCircle2 className="w-7 h-7 text-emerald-400 animate-bounce" />
+              ) : phase === "error" ? (
+                <AlertTriangle className="w-7 h-7 text-amber-400" />
+              ) : (
+                <DownloadCloud className="w-7 h-7 text-blue-400 animate-pulse" />
+              )}
+            </div>
+
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-semibold tracking-wide bg-blue-500/10 border border-blue-500/30 text-blue-400 mb-2">
+              <Sparkles size={12} />
+              {phase === "ready" ? t("ui.8a26edb03dfd") : t("ui.01047404efa7")}
+            </div>
+
+            <h2 className="text-lg font-bold text-white tracking-tight">
+              {phase === "ready"
+                ? t("ui.72596da4ac91")
+                : phase === "manual"
+                  ? t("ui.4661c7074301")
+                  : t("ui.38993b0dc492")}
+            </h2>
+            <p className="text-xs text-slate-400 mt-1 max-w-sm">
+              {phase === "ready"
+                ? restartCountdown !== null && restartCountdown > 0
+                  ? t("ui.ccd9eedc9ffc", { v0: restartCountdown })
+                  : t("ui.6d1f92a8e169")
+                : t("ui.d8cc21376f03")}
+            </p>
+
+            {/* 版本号对比 */}
+            {backendInfo && (
+              <div className="flex items-center justify-center gap-2 mt-3 font-mono text-xs bg-white/5 border border-white/10 px-3 py-1.5 rounded-xl">
+                <span className="text-slate-400">
+                  v{backendInfo.current_version}
+                </span>
+                <span className="text-slate-600">→</span>
+                <span className="text-emerald-400 font-bold">
+                  v{backendInfo.latest_version}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* 更新日志 */}
+          {backendInfo?.release_notes && (
+            <div className="px-6 py-2">
+              <div className="text-[11px] text-slate-400 max-h-24 overflow-y-auto bg-black/40 border border-white/5 p-2.5 rounded-xl whitespace-pre-wrap leading-relaxed">
+                <span className="font-semibold text-slate-300 block mb-0.5">
+                  {t("ui.6a1a7c79a877")}
+                </span>
+                {backendInfo.release_notes}
+              </div>
+            </div>
+          )}
+
+          {/* 进度 / 操作按钮区 */}
+          <div className="p-6 pt-3 space-y-4">
+            {/* 下载中进度条 */}
+            {phase === "downloading" && (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="text-slate-300 flex items-center gap-1.5 truncate mr-2">
+                    <RefreshCw
+                      size={13}
+                      className="animate-spin text-blue-400 flex-shrink-0"
+                    />
+                    <span className="truncate">
+                      {currentSource
+                        ? t("ui.75e385cc20c9", { v0: currentSource })
+                        : t("ui.c7b522d3f1f8")}
+                    </span>
+                  </span>
+                  <span className="font-mono text-blue-400 font-semibold flex-shrink-0">
+                    {pct > 0 ? `${pct}%` : t("ui.498556abb4d7")}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                  <motion.div
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full"
+                    style={{ width: `${Math.max(pct, 5)}%` }}
+                    transition={{ ease: "easeOut", duration: 0.2 }}
+                  />
+                </div>
+                <div className="flex justify-between items-center text-[11px] text-slate-500 font-mono">
+                  <span>
+                    {t("message.626d6fa9a1f5", {
+                      v0: formatBytes(progressBytes),
+                    })}
+                  </span>
+                  <span>
+                    {t("message.8a067d4623a1", { v0: formatBytes(totalBytes) })}
+                  </span>
+                </div>
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    onClick={onClose}
+                    className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors cursor-pointer py-1 px-2.5 rounded-lg hover:bg-white/5"
+                  >
+                    {t("ui.c0432e08bc81")}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 校验与安装中 */}
+            {phase === "installing" && (
+              <div className="flex items-center justify-center gap-2 py-3 text-xs text-indigo-300 font-medium bg-indigo-500/10 border border-indigo-500/20 rounded-xl">
+                <RefreshCw size={14} className="animate-spin text-indigo-400" />
+                {t("ui.fc9cfa1688b5")}
+              </div>
+            )}
+
+            {/* 安装就绪，提供重启按钮 */}
+            {phase === "ready" && (
+              <div className="flex gap-2">
+                <button
+                  onClick={onRestart}
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-medium text-xs shadow-lg shadow-green-500/25 transition-all active:scale-95 cursor-pointer"
+                >
+                  <RotateCcw size={14} />
+                  <span>
+                    {t("message.3010d17ff78b", {
+                      v0:
+                        restartCountdown !== null && restartCountdown > 0
+                          ? ` (${restartCountdown}s)`
+                          : "",
+                    })}
+                  </span>
+                </button>
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2.5 rounded-xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 text-xs transition-colors cursor-pointer"
+                >
+                  {t("ui.479fcc1cc066")}
+                </button>
+              </div>
+            )}
+
+            {/* 手动下载或失败分支 */}
+            {(phase === "manual" || phase === "error") && (
+              <div className="space-y-3">
+                <div
+                  className={`p-3 rounded-xl text-left border ${
+                    phase === "error"
+                      ? "bg-red-500/10 border-red-500/20"
+                      : "bg-amber-500/10 border-amber-500/20"
+                  }`}
+                >
+                  <div
+                    className={`flex items-center gap-1.5 text-xs font-semibold mb-1 ${
+                      phase === "error" ? "text-red-400" : "text-amber-400"
+                    }`}
+                  >
+                    <AlertTriangle size={14} />
+                    {phase === "error"
+                      ? t("ui.080be1943801")
+                      : t("ui.1753ea73e503")}
+                  </div>
+                  <p
+                    className={`text-[11px] leading-relaxed break-words ${
+                      phase === "error"
+                        ? "text-red-300/80"
+                        : "text-amber-300/80"
+                    }`}
+                  >
+                    {errorMessage || t("ui.7cac129eaddc")}
+                  </p>
+                </div>
+
+                {/* 候选多通道高速下载入口 */}
+                <div className="space-y-1.5">
+                  <div className="text-[11px] font-medium text-slate-400 text-left">
+                    {t("ui.a54ab611a83d")}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {downloadMirrors.map((m, i) => (
+                      <a
+                        key={i}
+                        href={m.url}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          void openUrl(m.url);
+                        }}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center justify-between py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs transition-colors cursor-pointer group"
+                        title={m.url}
+                      >
+                        <span className="truncate mr-1 text-[11px]">
+                          {m.name}
+                        </span>
+                        <ExternalLink
+                          size={11}
+                          className="flex-shrink-0 text-slate-400 group-hover:text-blue-400 transition-colors"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <button
+                    onClick={onRetry}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold shadow-lg shadow-blue-600/30 transition-all active:scale-95 cursor-pointer"
+                  >
+                    <RefreshCw size={13} />
+                    {t("ui.c9412680e848")}
+                  </button>
+                  <a
+                    href={backendInfo?.download_url ?? GITHUB_RELEASES_URL}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      void openUrl(
+                        backendInfo?.download_url ?? GITHUB_RELEASES_URL,
+                      );
+                    }}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 hover:text-white text-xs transition-colors cursor-pointer"
+                    title={t("ui.a68134b317f5")}
+                  >
+                    <ExternalLink size={13} />
+                    GitHub
+                  </a>
+                  <button
+                    onClick={onClose}
+                    className="px-3.5 py-2.5 rounded-xl text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 text-xs transition-colors cursor-pointer"
+                  >
+                    {t("ui.479fcc1cc066")}
+                  </button>
+                  {phase === "error" && (
+                    <button
+                      onClick={onExit}
+                      className="flex items-center justify-center p-2.5 rounded-xl bg-white/5 hover:bg-red-500/20 hover:text-red-300 border border-white/10 text-slate-400 transition-colors cursor-pointer"
+                      title={t("ui.dee9d3a89e20")}
+                    >
+                      <Power size={14} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}

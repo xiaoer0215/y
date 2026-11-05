@@ -1,0 +1,215 @@
+name: Update Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      tag: ${{ steps.package.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.3
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95'
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
+
+      - name: Build installer
+        env:
+          AI_HELPER_BRAND_ID: ${{ github.event.repository.name == 'u' && 'uocode' || github.event.repository.name == 'n' && 'nez-api' || 'yusr' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          pnpm select:brand -- $env:AI_HELPER_BRAND_ID
+          pnpm tauri build --bundles nsis
+
+      - name: Package release
+        id: package
+        run: |
+          $package = Get-Content -LiteralPath package.json -Encoding UTF8 -Raw | ConvertFrom-Json
+          $tag = "v$($package.version)"
+          ./scripts/package-release.ps1 -Tag $tag
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-assets
+          path: release/${{ steps.package.outputs.tag }}/*
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS (${{ matrix.target }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.3
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95'
+          targets: ${{ matrix.target }}
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build DMG installer
+        env:
+          AI_HELPER_BRAND_ID: ${{ github.event.repository.name == 'u' && 'uocode' || github.event.repository.name == 'n' && 'nez-api' || 'yusr' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          pnpm select:brand -- $env:AI_HELPER_BRAND_ID
+          pnpm tauri build --target ${{ matrix.target }} --bundles dmg
+
+      - name: Package macOS release
+        id: package
+        run: |
+          chmod +x ./scripts/package-macos.sh
+          ./scripts/package-macos.sh "" "${{ matrix.target }}"
+          package_ver=$(node -p "require('./package.json').version")
+          echo "tag=v${package_ver}" >> $GITHUB_OUTPUT
+
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-assets-${{ matrix.target }}
+          path: release/${{ steps.package.outputs.tag }}/*
+          if-no-files-found: error
+
+  update-release:
+    name: Update latest release
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: artifacts
+
+      - name: Prepare release directory
+        id: prep
+        run: |
+          mkdir -p release_assets
+          find artifacts -type f -exec cp {} release_assets/ \;
+          package_ver=$(node -p "require('./package.json').version")
+          tag="v${package_ver}"
+          echo "tag=$tag" >> $GITHUB_OUTPUT
+          ls -la release_assets/
+
+      - name: Check if release exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prep.outputs.tag }}
+        run: |
+          tag="${RELEASE_TAG}"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete old release assets
+        if: steps.check_release.outputs.exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prep.outputs.tag }}
+        run: |
+          tag="${RELEASE_TAG}"
+          assets=$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null || true)
+          for asset in $assets; do
+            if [[ "$asset" != "Source code"* ]]; then
+              echo "Deleting old asset: $asset"
+              gh release delete-asset "$tag" "$asset" --repo "$GITHUB_REPOSITORY" --yes || true
+            fi
+          done
+
+      - name: Upload new assets to existing release
+        if: steps.check_release.outputs.exists == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prep.outputs.tag }}
+        run: |
+          tag="${RELEASE_TAG}"
+          assets=(release_assets/*)
+          gh release upload "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+          notes="docs/releases/${tag}.md"
+          if [ -f "$notes" ]; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+          fi
+
+      - name: Create new release
+        if: steps.check_release.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prep.outputs.tag }}
+        run: |
+          tag="${RELEASE_TAG}"
+          notes="docs/releases/${tag}.md"
+          if [ ! -f "$notes" ]; then
+            echo "Missing release notes: $notes"
+            exit 1
+          fi
+          assets=(release_assets/*)
+          gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "AI Helper $tag" --notes-file "$notes" --latest

@@ -1,0 +1,32 @@
+{
+  "default": "uocode",
+  "versions": [
+    {
+      "id": "uocode",
+      "enabled": true,
+      "productName": "Uocode Client",
+      "userAgentName": "Uocode Client",
+      "siteUrl": "https://www.uocode.com",
+      "apiUrl": "https://www.uocode.com",
+      "updateManifestUrl": "https://www.uocode.com/downloads/uocode/latest.json"
+    },
+    {
+      "id": "nez-api",
+      "enabled": true,
+      "productName": "𝓝ě𝔃 𝓐𝓹ǐ",
+      "userAgentName": "Nez Api",
+      "siteUrl": "https://ne.aineapi.com",
+      "apiUrl": "https://ne.aineapi.com",
+      "updateManifestUrl": "https://ne.aineapi.com/downloads/nez-api/latest.json"
+    },
+    {
+      "id": "yusr",
+      "enabled": true,
+      "productName": "Yusr.ai",
+      "userAgentName": "Yusr.ai",
+      "siteUrl": "https://www.yusr.ai",
+      "apiUrl": "https://www.yusr.ai",
+      "updateManifestUrl": "https://www.yusr.ai/downloads/yusr/latest.json"
+    }
+  ]
+}

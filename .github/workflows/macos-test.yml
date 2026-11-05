@@ -1,0 +1,49 @@
+name: Build macOS Test Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Mac architecture
+        type: choice
+        required: true
+        default: universal-apple-darwin
+        options:
+          - universal-apple-darwin
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build current fork for macOS
+    runs-on: macos-15
+    timeout-minutes: 90
+    env:
+      BUILD_TARGET: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.12.3
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.95.0'
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: macos-test-${{ inputs.target }}
+      - name: Build and verify test packages
+        run: bash scripts/build-macos-test.sh "$BUILD_TARGET"
+      - name: Upload test packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: AI-Helper-macOS-test-${{ inputs.target }}
+          path: release/macos-test/
+          if-no-files-found: error
+          retention-days: 14

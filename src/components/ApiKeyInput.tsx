@@ -1,0 +1,784 @@
+import { t, useLocale } from "../lib/i18n";
+import { useState, useEffect } from "react";
+import {
+  Eye,
+  EyeOff,
+  Clipboard,
+  Copy,
+  X,
+  KeyRound,
+  ChevronDown,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
+import { toast } from "sonner";
+import { Input } from "./ui/input";
+import { cn } from "../lib/utils";
+import { useAuth } from "../lib/useAuth";
+import { TokenSelectModal } from "./auth/TokenSelectModal";
+import { ChannelGroupMonitor } from "./ChannelGroupMonitor";
+import { getUserTokens } from "../lib/api";
+import type { TokenItem } from "../types";
+import type { BoundTokenInfo } from "../lib/useBoundTokenGroup";
+
+export interface ApiKeyInputProps {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  envVarName?: string;
+  hintText?: string;
+  accentColor?: "blue" | "purple" | "emerald" | "orange";
+  toolName?: string;
+  toolId?: string;
+  title?: string;
+  badgeText?: string;
+  storageLocation?: string;
+  configKey?: string;
+  securityNote?: React.ReactNode;
+  hideHeader?: boolean;
+  hideFooter?: boolean;
+  hideGroupMonitor?: boolean;
+  compact?: boolean;
+  className?: string;
+  /** 绑定 Token（含分组）变更时回传，供确认页等展示 */
+  onBoundTokenChange?: (info: BoundTokenInfo | null) => void;
+}
+
+export function ApiKeyInput({
+  value,
+  onChange,
+  placeholder = "sk-...",
+  envVarName,
+  hintText,
+  accentColor = "blue",
+  toolName = t("ui.3239502ee7fe"),
+  toolId,
+  title,
+  badgeText,
+  storageLocation,
+  configKey,
+  securityNote,
+  hideHeader = false,
+  hideFooter = false,
+  hideGroupMonitor = false,
+  compact = false,
+  className,
+  onBoundTokenChange,
+}: ApiKeyInputProps) {
+  useLocale();
+  const [show, setShow] = useState(false);
+  const [localTokenModalOpen, setLocalTokenModalOpen] = useState(false);
+
+  const { authState, setLoginModalOpen } = useAuth();
+
+  const effectiveToolId =
+    toolId || toolName.toLowerCase().replace(/[^a-z0-9]/g, "") || "default";
+  const storageKey = `bound_token_${effectiveToolId}`;
+
+  const [boundToken, setBoundToken] = useState<{
+    id: number;
+    name: string;
+    group?: string | null;
+  } | null>(() => {
+    try {
+      const saved = localStorage.getItem(storageKey);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // 当外部 value 被手动清空时，同步解除绑定
+  useEffect(() => {
+    if (!value.trim() && boundToken) {
+      setBoundToken(null);
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {}
+    }
+  }, [value, boundToken, storageKey]);
+
+  // 向父组件同步绑定信息（含分组）；仅在有绑定时回传，避免挂载时 null 清空已解析分组
+  useEffect(() => {
+    if (boundToken) {
+      onBoundTokenChange?.(boundToken);
+    }
+  }, [boundToken, onBoundTokenChange]);
+
+  // 当处于已登录状态且 boundToken 存在时，通过 API 校验并同步最新 group；或未绑定时尝试自动匹配
+  useEffect(() => {
+    if (!authState.is_logged_in || !value.trim()) return;
+
+    let isMounted = true;
+    getUserTokens()
+      .then((tokens) => {
+        if (!isMounted || !tokens || tokens.length === 0) return;
+
+        const val = value.trim();
+
+        // 1. 如果已有 boundToken，核对该绑定是否依然与当前输入框的 Key 匹配
+        if (boundToken) {
+          const match = tokens.find((t) => t.id === boundToken.id);
+          const isStillMatch = match
+            ? !match.key ||
+              match.key === val ||
+              (val.length >= 12 &&
+                match.key.length >= 12 &&
+                match.key.startsWith(val.slice(0, 7)) &&
+                match.key.endsWith(val.slice(-4)))
+            : false;
+
+          if (match && isStillMatch) {
+            if (match.group !== boundToken.group) {
+              const updated = {
+                ...boundToken,
+                group: match.group ?? undefined,
+              };
+              setBoundToken(updated);
+              try {
+                localStorage.setItem(storageKey, JSON.stringify(updated));
+              } catch {}
+            }
+            return;
+          }
+
+          // 已不匹配当前输入的 Key（或已在云端被删除），解除旧绑定并重新向下比对
+          setBoundToken(null);
+          try {
+            localStorage.removeItem(storageKey);
+          } catch {}
+        }
+
+        // 2. 如果 boundToken 为 null 或已解绑，通过当前输入框中的 Key 明文比对匹配
+        const exactMatch = tokens.find((t) => t.key && t.key === val);
+        if (exactMatch) {
+          const info = {
+            id: exactMatch.id,
+            name: exactMatch.name,
+            group: exactMatch.group ?? undefined,
+          };
+          setBoundToken(info);
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(info));
+          } catch {}
+          return;
+        }
+
+        // 若为脱敏 key，尝试基于前缀+后缀匹配
+        if (val.length >= 12) {
+          const prefix = val.slice(0, 7);
+          const suffix = val.slice(-4);
+          const partialMatch = tokens.find(
+            (t) => t.key && t.key.startsWith(prefix) && t.key.endsWith(suffix),
+          );
+          if (partialMatch) {
+            const info = {
+              id: partialMatch.id,
+              name: partialMatch.name,
+              group: partialMatch.group ?? undefined,
+            };
+            setBoundToken(info);
+            try {
+              localStorage.setItem(storageKey, JSON.stringify(info));
+            } catch {}
+          }
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [authState.is_logged_in, value, boundToken, storageKey]);
+
+  // 监听全套同步与分组变更事件
+  useEffect(() => {
+    const handleSyncEvent = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        id: number;
+        name: string;
+        key?: string;
+        group?: string | null;
+        targets?: string[];
+      }>;
+      if (
+        customEvent.detail?.targets &&
+        !customEvent.detail.targets.includes(effectiveToolId)
+      )
+        return;
+      if (customEvent.detail) {
+        if (customEvent.detail.key) {
+          onChange(customEvent.detail.key);
+        }
+        const info = {
+          id: customEvent.detail.id,
+          name: customEvent.detail.name,
+          group: customEvent.detail.group,
+        };
+        setBoundToken(info);
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(info));
+        } catch {}
+      }
+    };
+
+    const handleGroupUpdated = (e: Event) => {
+      const customEvent = e as CustomEvent<{
+        toolId?: string;
+        tokenId?: number;
+        group: string;
+      }>;
+      if (customEvent.detail) {
+        setBoundToken((prev) => {
+          if (!prev) return prev;
+          // 若指定了 tokenId 且当前绑定不匹配，则不更新
+          if (
+            customEvent.detail.tokenId &&
+            prev.id &&
+            prev.id !== customEvent.detail.tokenId
+          ) {
+            return prev;
+          }
+          // 若指定了 toolId 且与当前工具不匹配，则不更新
+          if (
+            customEvent.detail.toolId &&
+            customEvent.detail.toolId !== effectiveToolId
+          ) {
+            return prev;
+          }
+          const updated = { ...prev, group: customEvent.detail.group };
+          try {
+            localStorage.setItem(storageKey, JSON.stringify(updated));
+          } catch {}
+          return updated;
+        });
+      }
+    };
+
+    window.addEventListener("ai_helper_sync_all_tokens", handleSyncEvent);
+    window.addEventListener("ai_helper_group_updated", handleGroupUpdated);
+    return () => {
+      window.removeEventListener("ai_helper_sync_all_tokens", handleSyncEvent);
+      window.removeEventListener("ai_helper_group_updated", handleGroupUpdated);
+    };
+  }, [storageKey, effectiveToolId, onChange]);
+
+  const handlePaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        onChange(text.trim());
+        toast.success(t("ui.a1095c0f8fa1"));
+      } else {
+        toast.info(t("ui.c915f28d2a69"));
+      }
+    } catch {
+      toast.error(t("ui.1ef83dd1afa3"));
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(t("ui.0b444455f047"));
+    } catch {
+      toast.error(t("ui.f2c6b5167b9a"));
+    }
+  };
+
+  const handleClear = () => {
+    onChange("");
+    toast.info(t("ui.f8a66770bfa2"));
+  };
+
+  const isEmerald = accentColor === "emerald";
+  const isPurple = accentColor === "purple";
+  const isOrange = accentColor === "orange";
+  const isBlue = !isEmerald && !isPurple && !isOrange;
+
+  const handleKeySelected = (plainKey: string, token: TokenItem) => {
+    onChange(plainKey);
+    const info = {
+      id: token.id,
+      name: token.name,
+      group: token.group ?? undefined,
+    };
+    setBoundToken(info);
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(info));
+    } catch {}
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col justify-between h-full space-y-2.5",
+        className,
+      )}
+    >
+      <div className="space-y-2.5">
+        {/* 顶部标题与快捷操作栏 */}
+        {title ? (
+          <div className="flex items-center justify-between gap-2.5 mb-1 flex-wrap sm:flex-nowrap">
+            {/* 左侧：标题与存储位置标识 */}
+            <div className="flex items-center gap-2 min-w-0">
+              <div
+                className={cn(
+                  "w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors shadow-2xs border",
+                  isPurple &&
+                    "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+                  isEmerald &&
+                    "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
+                  isOrange &&
+                    "bg-orange-500/10 text-orange-600 dark:text-orange-400 border-orange-500/20",
+                  isBlue &&
+                    "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20",
+                )}
+              >
+                <KeyRound size={13} />
+              </div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-xs font-semibold text-slate-800 dark:text-gray-200 truncate tracking-tight">
+                  {title}
+                </span>
+                {badgeText && (
+                  <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-100 dark:bg-white/5 text-slate-500 dark:text-gray-400 border border-slate-200/60 dark:border-white/5 shadow-2xs">
+                    {badgeText}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* 右侧：选择已有 Key 按钮与登录账号状态 */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              {authState.is_logged_in ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setLocalTokenModalOpen(true)}
+                    className={cn(
+                      "group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer shadow-xs active:scale-[0.97] hover:scale-[1.01]",
+                      isEmerald
+                        ? "bg-emerald-50/90 hover:bg-emerald-100/90 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200 border border-emerald-200/90 dark:border-emerald-500/35 hover:shadow-emerald-500/15"
+                        : isPurple
+                          ? "bg-purple-50/90 hover:bg-purple-100/90 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200 border border-purple-200/90 dark:border-purple-500/35 hover:shadow-purple-500/15"
+                          : isOrange
+                            ? "bg-orange-50/90 hover:bg-orange-100/90 text-orange-800 dark:bg-orange-500/15 dark:text-orange-200 border border-orange-200/90 dark:border-orange-500/35 hover:shadow-orange-500/15"
+                            : "bg-blue-50/90 hover:bg-blue-100/90 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200 border border-blue-200/90 dark:border-blue-500/35 hover:shadow-blue-500/15",
+                    )}
+                    title={t("ui.ad20e4d21d48", { v0: toolName })}
+                  >
+                    {boundToken ? (
+                      <>
+                        <span className="relative flex h-2 w-2 mr-0.5">
+                          <span
+                            className={cn(
+                              "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                              isEmerald
+                                ? "bg-emerald-400"
+                                : isPurple
+                                  ? "bg-purple-400"
+                                  : isOrange
+                                    ? "bg-orange-400"
+                                    : "bg-blue-400",
+                            )}
+                          />
+                          <span
+                            className={cn(
+                              "relative inline-flex rounded-full h-2 w-2",
+                              isEmerald
+                                ? "bg-emerald-500"
+                                : isPurple
+                                  ? "bg-purple-500"
+                                  : isOrange
+                                    ? "bg-orange-500"
+                                    : "bg-blue-500",
+                            )}
+                          />
+                        </span>
+                        <KeyRound
+                          size={11}
+                          className="opacity-90 group-hover:rotate-12 transition-transform duration-200"
+                        />
+                        <span className="font-semibold tracking-wide truncate max-w-[90px] sm:max-w-[120px]">
+                          {t("message.bc1ff2dc975b", { v0: boundToken.name })}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound
+                          size={11}
+                          className="opacity-80 group-hover:rotate-12 transition-transform duration-200"
+                        />
+                        <span>{t("ui.fb796692ad46")}</span>
+                      </>
+                    )}
+                    <ChevronDown
+                      size={11}
+                      className={cn(
+                        "opacity-60 transition-transform duration-300",
+                        localTokenModalOpen
+                          ? "rotate-180"
+                          : "group-hover:translate-y-0.5",
+                      )}
+                    />
+                  </button>
+
+                  <div
+                    className="hidden sm:flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400 font-mono bg-slate-100/70 dark:bg-white/5 px-2 py-1 rounded-lg border border-slate-200/60 dark:border-white/5"
+                    title={t("ui.df70b35a6ac5", {
+                      v0: authState.user?.username,
+                    })}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                    <span className="max-w-[80px] truncate">
+                      {authState.user?.username}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setLoginModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-all cursor-pointer active:scale-98 shadow-xs"
+                  title={t("ui.22d1f64c2a1a")}
+                >
+                  <ShieldCheck size={12} className="text-blue-500" />
+                  <span>{t("ui.fa22d4b9f59b")}</span>
+                  <Sparkles size={11} className="text-amber-500" />
+                </button>
+              )}
+            </div>
+          </div>
+        ) : !hideHeader ? (
+          /* 没有传入 title 时的兼容回退头部 (如单独使用或在弹窗中使用) */
+          <div className="flex items-center justify-between px-0.5 text-xs mb-1">
+            <div className="flex items-center gap-2">
+              {authState.is_logged_in ? (
+                <button
+                  type="button"
+                  onClick={() => setLocalTokenModalOpen(true)}
+                  className={cn(
+                    "group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all duration-200 cursor-pointer shadow-xs active:scale-[0.97] hover:scale-[1.01]",
+                    isEmerald
+                      ? "bg-emerald-50/90 hover:bg-emerald-100/90 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200 border border-emerald-200/90 dark:border-emerald-500/35 hover:shadow-emerald-500/15"
+                      : isPurple
+                        ? "bg-purple-50/90 hover:bg-purple-100/90 text-purple-800 dark:bg-purple-500/15 dark:text-purple-200 border border-purple-200/90 dark:border-purple-500/35 hover:shadow-purple-500/15"
+                        : isOrange
+                          ? "bg-orange-50/90 hover:bg-orange-100/90 text-orange-800 dark:bg-orange-500/15 dark:text-orange-200 border border-orange-200/90 dark:border-orange-500/35 hover:shadow-orange-500/15"
+                          : "bg-blue-50/90 hover:bg-blue-100/90 text-blue-800 dark:bg-blue-500/15 dark:text-blue-200 border border-blue-200/90 dark:border-blue-500/35 hover:shadow-blue-500/15",
+                  )}
+                  title={t("ui.ad20e4d21d48", { v0: toolName })}
+                >
+                  {boundToken ? (
+                    <>
+                      <span className="relative flex h-2 w-2 mr-0.5">
+                        <span
+                          className={cn(
+                            "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
+                            isEmerald
+                              ? "bg-emerald-400"
+                              : isPurple
+                                ? "bg-purple-400"
+                                : isOrange
+                                  ? "bg-orange-400"
+                                  : "bg-blue-400",
+                          )}
+                        />
+                        <span
+                          className={cn(
+                            "relative inline-flex rounded-full h-2 w-2",
+                            isEmerald
+                              ? "bg-emerald-500"
+                              : isPurple
+                                ? "bg-purple-500"
+                                : isOrange
+                                  ? "bg-orange-500"
+                                  : "bg-blue-500",
+                          )}
+                        />
+                      </span>
+                      <KeyRound
+                        size={11}
+                        className="opacity-90 group-hover:rotate-12 transition-transform duration-200"
+                      />
+                      <span className="font-semibold tracking-wide">
+                        {t("message.bc1ff2dc975b", { v0: boundToken.name })}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <KeyRound
+                        size={11}
+                        className="opacity-80 group-hover:rotate-12 transition-transform duration-200"
+                      />
+                      <span>{t("ui.bbca4aec7151")}</span>
+                    </>
+                  )}
+                  <ChevronDown
+                    size={11}
+                    className={cn(
+                      "opacity-60 transition-transform duration-300",
+                      localTokenModalOpen
+                        ? "rotate-180"
+                        : "group-hover:translate-y-0.5",
+                    )}
+                  />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setLoginModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-white/5 dark:text-gray-300 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 transition-all cursor-pointer active:scale-98 shadow-xs"
+                  title={t("ui.22d1f64c2a1a")}
+                >
+                  <ShieldCheck size={12} className="text-blue-500" />
+                  <span>{t("ui.8e5234972faf")}</span>
+                  <Sparkles size={11} className="text-amber-500 ml-0.5" />
+                </button>
+              )}
+            </div>
+
+            {authState.is_logged_in && (
+              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-gray-400 font-mono bg-slate-100/70 dark:bg-white/5 px-2 py-0.5 rounded-lg border border-slate-200/60 dark:border-white/5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span>{authState.user?.username}</span>
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* API Key 输入框主体 */}
+        <div className="relative group">
+          <div
+            className={cn(
+              "absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400 dark:text-gray-500 transition-colors duration-200",
+              isEmerald
+                ? "group-focus-within:text-emerald-500"
+                : isPurple
+                  ? "group-focus-within:text-purple-500"
+                  : isOrange
+                    ? "group-focus-within:text-orange-500"
+                    : "group-focus-within:text-blue-500",
+            )}
+          >
+            <KeyRound size={15} />
+          </div>
+
+          <Input
+            aria-label={title || "API Key"}
+            data-ui="api-key-input"
+            type={show ? "text" : "password"}
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className={cn(
+              "!h-11 !min-h-[44px] !py-2.5 pl-10 pr-32 font-mono text-xs tracking-wider rounded-md",
+              "bg-slate-50/80 dark:bg-[#141724]/80 border-slate-200 dark:border-white/10 text-slate-900 dark:text-gray-200",
+              "transition-all duration-200 placeholder:text-slate-400 dark:placeholder:text-gray-600 shadow-2xs",
+              isEmerald
+                ? "focus:bg-white dark:focus:bg-[#141724] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20"
+                : isPurple
+                  ? "focus:bg-white dark:focus:bg-[#141724] focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                  : isOrange
+                    ? "focus:bg-white dark:focus:bg-[#141724] focus:border-orange-500 focus:ring-2 focus:ring-orange-500/20"
+                    : "focus:bg-white dark:focus:bg-[#141724] focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20",
+            )}
+          />
+
+          {/* 右侧快捷操作按钮组 */}
+          <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+            {value ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors cursor-pointer"
+                  title={t("ui.f29959e66572")}
+                >
+                  <Copy size={13} />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClear}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 dark:text-gray-400 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
+                  title={t("ui.84fcd70d4280")}
+                >
+                  <X size={13} />
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handlePaste}
+                className={cn(
+                  "flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg border font-medium transition-colors cursor-pointer shadow-2xs",
+                  isEmerald
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-400"
+                    : isPurple
+                      ? "border-purple-200 bg-purple-50 text-purple-700 hover:bg-purple-100 dark:border-purple-500/30 dark:bg-purple-500/10 dark:text-purple-400"
+                      : isOrange
+                        ? "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100 dark:border-orange-500/30 dark:bg-orange-500/10 dark:text-orange-400"
+                        : "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400",
+                )}
+                title={t("ui.ade39c189697")}
+              >
+                <Clipboard size={11} />
+                <span>{t("common.paste")}</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-slate-200/60 dark:hover:bg-white/10 transition-colors cursor-pointer"
+              title={show ? t("ui.0826d187a20d") : t("ui.102d692a3bd2")}
+              tabIndex={-1}
+            >
+              {show ? <EyeOff size={13} /> : <Eye size={13} />}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* 底部存储位置与隐私安全提示条 */}
+      {!hideFooter && (
+        <div
+          className={cn(
+            "mt-3 flex items-center justify-between gap-2.5 rounded-xl border text-xs transition-colors",
+            compact ? "p-2 text-[11px]" : "p-2.5 text-xs",
+            "bg-slate-50/70 border-slate-200/80 dark:bg-white/[0.03] dark:border-white/5 text-slate-500 dark:text-gray-400",
+          )}
+        >
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <ShieldCheck
+              size={compact ? 13 : 14}
+              className={cn(
+                "flex-shrink-0",
+                isEmerald
+                  ? "text-emerald-500 dark:text-emerald-400"
+                  : isPurple
+                    ? "text-purple-500 dark:text-purple-400"
+                    : isOrange
+                      ? "text-orange-500 dark:text-orange-400"
+                      : "text-blue-500 dark:text-blue-400",
+              )}
+            />
+            <div className="leading-relaxed truncate sm:whitespace-normal">
+              {securityNote ? (
+                securityNote
+              ) : storageLocation && configKey ? (
+                <span>
+                  {t("ui.68b3c555a620")}{" "}
+                  <code
+                    className={cn(
+                      "px-1 py-0.5 rounded font-mono text-[11px] font-medium",
+                      isPurple &&
+                        "bg-purple-500/10 text-purple-700 dark:text-purple-300",
+                      isEmerald &&
+                        "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                      isOrange &&
+                        "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+                      isBlue &&
+                        "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+                    )}
+                  >
+                    {storageLocation}
+                  </code>{" "}
+                  (
+                  <code className="font-mono text-[11px] font-semibold text-slate-700 dark:text-gray-200">
+                    {configKey}
+                  </code>
+                  {t("ui.9578cecff8e1")}
+                </span>
+              ) : storageLocation ? (
+                <span>
+                  {t("ui.fdac8b0691d5")}{" "}
+                  <code
+                    className={cn(
+                      "px-1 py-0.5 rounded font-mono text-[11px] font-medium",
+                      isPurple &&
+                        "bg-purple-500/10 text-purple-700 dark:text-purple-300",
+                      isEmerald &&
+                        "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                      isOrange &&
+                        "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+                      isBlue &&
+                        "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+                    )}
+                  >
+                    {storageLocation}
+                  </code>
+                  {hintText ? `，${hintText}` : t("ui.7a7c27994be8")}
+                </span>
+              ) : envVarName ? (
+                <span>
+                  {t("ui.242dab02fe3a")}{" "}
+                  <code
+                    className={cn(
+                      "px-1 py-0.5 rounded font-mono text-[11px] font-medium",
+                      isPurple &&
+                        "bg-purple-500/10 text-purple-700 dark:text-purple-300",
+                      isEmerald &&
+                        "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300",
+                      isOrange &&
+                        "bg-orange-500/10 text-orange-700 dark:text-orange-300",
+                      isBlue &&
+                        "bg-blue-500/10 text-blue-700 dark:text-blue-300",
+                    )}
+                  >
+                    {envVarName}
+                  </code>
+                  {t("ui.1720c1aa2346")}
+                </span>
+              ) : hintText ? (
+                <span>{hintText}</span>
+              ) : (
+                <span>{t("ui.3fe1b3b29dfb")}</span>
+              )}
+            </div>
+          </div>
+
+          {/* 右侧：字符数标签或状态提示 */}
+          <div className="flex-shrink-0 flex items-center">
+            {value ? (
+              <span className="font-mono text-[10px] px-2 py-0.5 rounded-md bg-white dark:bg-white/5 border border-slate-200/70 dark:border-white/10 text-slate-500 dark:text-gray-400 shadow-2xs font-medium">
+                {t("message.bd8a363b354d", { v0: value.length })}
+              </span>
+            ) : (
+              <span className="text-[10px] px-2 py-0.5 rounded-md font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 shadow-2xs">
+                {t("ui.516527377e6a")}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 底部通道分组健康稳定性监控面板 (在四个工具中均在此配置 Key 下方复用呈现) */}
+      {!hideGroupMonitor && !compact && (
+        <div className="mt-3.5">
+          <ChannelGroupMonitor
+            currentGroupName={boundToken?.group}
+            toolName={toolName}
+            toolId={effectiveToolId}
+            accentColor={accentColor}
+            onOpenTokenSelect={() => setLocalTokenModalOpen(true)}
+          />
+        </div>
+      )}
+
+      {/* 当前工具专用的令牌选择弹窗（带有流畅 GSAP & React-Bits 动效） */}
+      <TokenSelectModal
+        open={localTokenModalOpen}
+        selectedTokenId={boundToken?.id ?? null}
+        onSelectKey={handleKeySelected}
+        onClose={() => setLocalTokenModalOpen(false)}
+        toolName={toolName}
+        accentColor={accentColor}
+      />
+    </div>
+  );
+}
+
+export default ApiKeyInput;

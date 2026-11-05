@@ -1,0 +1,245 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.4) transparent;
+}
+
+html.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+/* 自定义极简优雅滚动条 (WebKit/Blink) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgba(148, 163, 184, 0.55);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(100, 116, 139, 0.85);
+}
+
+html.dark ::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background-color: rgba(255, 255, 255, 0.25);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(255, 255, 255, 0.45);
+}
+
+html,
+body {
+  font-family:
+    "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+    "Noto Sans CJK SC", sans-serif;
+  /* 背景色与应用主背景保持一致，防止大窗口/全屏时底部出现黑边 */
+  background: #f8fafc;
+  color: #1e293b;
+  height: 100%;
+  overflow: hidden;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ThemeProvider 只在 <html> 上切换 .dark class，body.dark 永远不触发 */
+html.dark {
+  background: #090a0f;
+  color: #e5e5e5;
+}
+
+/* Keep small captions readable at native WebView zoom and Windows DPI. */
+.text-\[10px\],
+.text-\[11px\] {
+  font-size: 12px;
+}
+.text-xs {
+  font-size: 13px;
+}
+.text-slate-400,
+.text-gray-400,
+.text-gray-500 {
+  color: #64748b;
+}
+html.dark .dark\:text-gray-500,
+html.dark .dark\:text-gray-400,
+html.dark .text-slate-400 {
+  color: #a8b2c1;
+}
+.workspace-main {
+  padding-bottom: 4px;
+}
+.app-main.list-main,
+.app-main.tools-main {
+  padding-bottom: 12px;
+}
+.list-main .list-pagination {
+  padding-right: 48px;
+}
+.workspace-main .tool-config-panel {
+  padding-bottom: 0;
+}
+.workspace-main .tool-config-panel > .sticky {
+  bottom: 4px;
+}
+
+#root {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Shared control geometry: compact corners, including legacy panels and portals. */
+.app-frame {
+  overflow: clip !important;
+}
+
+[class*="rounded"],
+button,
+[role="button"],
+[role="tab"],
+[role="tablist"],
+[role="menuitem"],
+select,
+textarea,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]) {
+  border-radius: 6px !important;
+}
+
+[class*="rounded-full"]:not(:empty),
+span[class*="rounded"],
+[data-ui="badge"] {
+  border-radius: 4px !important;
+}
+
+.tool-panel-header > :first-child {
+  min-width: 0;
+  align-items: flex-start;
+}
+.tool-panel-header > :first-child > :last-child {
+  min-width: 0;
+}
+.tool-panel-header > :first-child > :last-child > :first-child {
+  flex-wrap: wrap;
+}
+.tool-panel-header h1 {
+  white-space: nowrap;
+}
+.tool-panel-header p {
+  max-width: 48rem;
+  line-height: 1.7;
+}
+.tool-panel-header > :last-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-self: stretch;
+  width: 100%;
+  gap: 8px;
+}
+.tool-panel-header > :last-child > button {
+  height: 36px;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tool-panel-header .config-path-bar {
+  width: min(100%, 470px);
+  margin-left: auto;
+}
+.tool-panel-header > :last-child > div:not(.config-path-bar) {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.tool-config-panel {
+  flex-shrink: 0;
+}
+.tool-config-panel > .sticky {
+  margin-top: 0;
+}
+.app-main > div > div {
+  flex-shrink: 0;
+}
+
+input.peer + div.rounded-full {
+  border-radius: 6px !important;
+}
+
+input.peer + div.rounded-full::after {
+  border-radius: 4px !important;
+}
+
+@media (max-height: 720px) {
+  .sidebar-nav-description {
+    display: none;
+  }
+}
+
+button:focus-visible,
+[role="menuitem"]:focus-visible,
+select:focus-visible {
+  outline: 2px solid rgb(59 130 246 / 0.65);
+  outline-offset: 2px;
+}
+
+@keyframes shine {
+  0% {
+    background-position: 100%;
+  }
+  100% {
+    background-position: -100%;
+  }
+}
+
+@keyframes star-movement-top {
+  0% {
+    transform: translate(0%, 0%);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(100%, 0%);
+    opacity: 0;
+  }
+}
+
+@keyframes star-movement-bottom {
+  0% {
+    transform: translate(0%, 0%);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-100%, 0%);
+    opacity: 0;
+  }
+}
+
+.animate-star-movement-top {
+  animation: star-movement-top 4s linear infinite alternate;
+}
+
+.animate-star-movement-bottom {
+  animation: star-movement-bottom 4s linear infinite alternate;
+}
