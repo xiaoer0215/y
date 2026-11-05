@@ -41,6 +41,8 @@ https://www.yusr.ai/downloads/yusr/latest.json
 
 更新清单、签名包和安装包需要部署到对应网站的公开下载目录。私有 GitHub Release 仅用于发布和存档，不能把仓库令牌编译到客户端。
 
+macOS 若要通过 Gatekeeper，需要在对应 GitHub 仓库配置 Apple Developer ID 的签名与公证 Secrets；仅有 Tauri 更新签名不等于 Apple 公证。
+
 ## 许可
 
 MIT License。完整发行配置和签名说明见 [`brands/README.md`](brands/README.md)。

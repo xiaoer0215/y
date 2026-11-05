@@ -36,4 +36,6 @@ GitHub 发布流水线按仓库名称选择品牌：`xiaoer0215/u` 对应 Uocode
 
 当前应用已启用远程更新。客户端优先读取对应品牌网站的 `latest.json`，清单中的安装包 URL 必须是站点可直接访问的公开下载地址；GitHub 私有 Release 只作为发布源，不应把访问令牌编译进客户端。部署新版本时同步上传清单、签名包和安装包，再用客户端“检查更新”验证。
 
-macOS 包包含 Tauri 更新签名，但尚未做 Apple Developer 签名和公证，首次打开可能需要在系统“隐私与安全性”中允许。
+macOS 构建已接入 Apple Developer 签名与公证参数；如果仓库尚未配置这些 Secrets，产物只包含 Tauri 更新签名，首次打开仍可能需要在系统“隐私与安全性”中允许。
+
+要发布免 Gatekeeper 拦截的 macOS 包，在三个仓库分别配置以下 Actions Secrets：`APPLE_CERTIFICATE`（Developer ID Application `.p12` 的 base64 内容）、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`（例如 `Developer ID Application: Company Name (TEAMID)`）、`APPLE_ID`、`APPLE_PASSWORD`（建议使用 App-Specific Password）和 `APPLE_TEAM_ID`。缺少任一 Apple 凭据时，工作流仍可构建 Tauri 包，但该包不会被 Apple 公证，不能宣称已免提示。
