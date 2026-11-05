@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { getSiteStatus } from "./api";
 import { t, getLocale, useLocale } from "./i18n";
 import type { SiteStatus } from "../types";
+import { isSiteHost } from "./brand";
 
 export interface GroupDisplayName {
   en?: string;
@@ -69,7 +70,7 @@ export function parseApiEndpoints(value: unknown): ApiEndpoint[] {
         url.password ||
         url.search ||
         url.hash ||
-        ["www.uocode.com", "uocode.com"].includes(url.hostname)
+        isSiteHost(url.hostname)
       )
         continue;
       const normalized = url.href.replace(/\/+$/, "");

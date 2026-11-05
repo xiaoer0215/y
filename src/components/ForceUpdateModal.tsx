@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { t, useLocale } from "../lib/i18n";
 /**
  * ForceUpdateModal — 自动更新组件
@@ -69,36 +70,18 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-const GITHUB_RELEASES_URL = "https://github.com/TF49/AI-Helper/releases/latest";
+const GITHUB_RELEASES_URL = `https://github.com/${BRAND.repository}/releases/latest`;
 
 function getAcceleratedDownloadUrls(version?: string) {
   if (!version) return [];
   const cleanVer = version.replace(/^v/, "");
-  const setupName = isMac()
-    ? `AI-Helper-v${cleanVer}-macOS.dmg`
-    : `AI-Helper-v${cleanVer}-Windows-x64-Setup.exe`;
-  return [
-    {
-      name: t("ui.a19b7eef9f72"),
-      url: `https://bobdong.oss-cn-beijing.aliyuncs.com/desktop/${setupName}`,
-    },
-    {
-      name: t("ui.05fb484aacc9"),
-      url: `https://ghfast.top/https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
-    },
-    {
-      name: t("ui.ea38bafd09dc"),
-      url: `https://gh-proxy.com/https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
-    },
-    {
-      name: t("ui.9ea88f9a511e"),
-      url: `https://ghproxy.net/https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
-    },
-    {
-      name: t("ui.eaa0d7eb6adc"),
-      url: `https://github.com/TF49/AI-Helper/releases/download/v${cleanVer}/${setupName}`,
-    },
-  ];
+  const slug = BRAND.userAgentName.replace(/[^A-Za-z0-9.-]+/g, "-");
+  const base = BRAND.updateManifestUrl.slice(0, BRAND.updateManifestUrl.lastIndexOf("/"));
+  const platforms = isMac() ? ["macOS-aarch64.dmg", "macOS-x64.dmg"] : ["Windows-x64-Setup.exe"];
+  return platforms.map((platform) => ({
+    name: `${BRAND.productName} ${platform.replace(/\.(dmg|exe)$/, "")}`,
+    url: `${base}/${slug}-v${cleanVer}-${platform}`,
+  }));
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────

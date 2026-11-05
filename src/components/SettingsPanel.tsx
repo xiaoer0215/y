@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { t, useLocale } from "../lib/i18n";
 import { useEffect, useState } from "react";
 import {
@@ -290,7 +291,7 @@ export default function SettingsPanel({
       {tab === "feedback" && <FeedbackPanel version={version} />}
       {tab === "about" && (
         <div className={cardClass + " p-6"}>
-          <h2 className="text-lg font-semibold">Uocode Client</h2>
+          <h2 className="text-lg font-semibold">{BRAND.productName}</h2>
           <p className="mt-2 text-xs text-slate-500">
             {t("message.36e384c2802b", { v0: version })}
           </p>

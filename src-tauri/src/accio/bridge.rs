@@ -227,7 +227,7 @@ async fn handle_health() -> Json<Value> {
     Json(json!({
         "ok": true,
         "model": config.model,
-        "provider": "bob-api"
+        "provider": "ai-helper"
     }))
 }
 
@@ -257,7 +257,7 @@ fn model_list_response(config: &AccioConfig, mut models: Vec<String>) -> Json<Va
                 "modelCode": model,
                 "modelName": model,
                 "modelDisplayName": model,
-                "modelDesc": format!("{} via www.uocode.com", model),
+                "modelDesc": format!("{} via {}", model, env!("AI_HELPER_BRAND_SITE_URL")),
                 "visible": true,
                 "isDefault": model == config.model.trim(),
                 "freeUse": true,
@@ -270,7 +270,7 @@ fn model_list_response(config: &AccioConfig, mut models: Vec<String>) -> Json<Va
         .collect();
     Json(json!([{
         "provider": "ai-helper",
-        "providerDisplayName": "AI-Helper (www.uocode.com)",
+        "providerDisplayName": env!("AI_HELPER_BRAND_NAME"),
         "modelList": model_list
     }]))
 }

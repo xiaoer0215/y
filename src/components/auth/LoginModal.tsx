@@ -1,3 +1,4 @@
+import { BRAND } from "../../lib/brand";
 import { t, useLocale } from "../../lib/i18n";
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -284,13 +285,13 @@ export function LoginModal({
             <aside className="hidden flex-col justify-between overflow-hidden bg-[#10283a] p-7 text-white sm:flex">
               <div>
                 <div className="flex h-12 w-12 items-center justify-center border border-white/15 bg-white/10">
-                  <BrandLogo size={30} alt="Uocode Client" />
+                  <BrandLogo size={30} alt={BRAND.productName} />
                 </div>
                 <div className="mt-6 text-[10px] font-semibold tracking-[0.18em] text-sky-300">
-                  UOCODE
+                  {BRAND.userAgentName}
                 </div>
                 <h2 className="mt-2 text-xl font-semibold text-white">
-                  Uocode <span className="text-sky-300">Client</span>
+                  {BRAND.productName}
                 </h2>
                 <div className="mt-4 h-0.5 w-10 bg-sky-400" />
               </div>

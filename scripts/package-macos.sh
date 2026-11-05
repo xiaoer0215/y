@@ -4,6 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGE_JSON="$REPO_ROOT/package.json"
 VERSION="$(node -p "require('$PACKAGE_JSON').version")"
+PRODUCT="$(node -p "require('$REPO_ROOT/src-tauri/tauri.conf.json').productName.replace(/[^A-Za-z0-9.-]+/g,'-')")"
 TAG="${1:-v$VERSION}"
 TARGET="${2:-aarch64-apple-darwin}"
 
@@ -24,7 +25,7 @@ if [ -n "$DMG_FILE" ] && [ -f "$DMG_FILE" ]; then
   elif [[ "$TARGET" == *"universal"* ]]; then
     ARCH_NAME="universal"
   fi
-  TARGET_DMG="$ASSET_ROOT/AI-Helper-$TAG-macOS-$ARCH_NAME.dmg"
+  TARGET_DMG="$ASSET_ROOT/$PRODUCT-$TAG-macOS-$ARCH_NAME.dmg"
   cp "$DMG_FILE" "$TARGET_DMG"
   echo "Copied macOS DMG to: $TARGET_DMG"
 
@@ -37,11 +38,17 @@ fi
 # 查找 Tauri Updater 增量升级包 (*.tar.gz)
 TAR_GZ=$(find "$BUILD_ROOT/bundle/macos" -name "*.tar.gz" 2>/dev/null | head -n 1 || true)
 if [ -n "$TAR_GZ" ] && [ -f "$TAR_GZ" ]; then
-  cp "$TAR_GZ" "$ASSET_ROOT/"
+  UPDATER_NAME="$PRODUCT-$TAG-macOS-$ARCH_NAME.app.tar.gz"
+  cp "$TAR_GZ" "$ASSET_ROOT/$UPDATER_NAME"
   if [ -f "$TAR_GZ.sig" ]; then
-    cp "$TAR_GZ.sig" "$ASSET_ROOT/"
+    cp "$TAR_GZ.sig" "$ASSET_ROOT/$UPDATER_NAME.sig"
   fi
   echo "Copied macOS updater artifact: $(basename "$TAR_GZ")"
+fi
+
+if [ -z "$DMG_FILE" ] || [ -z "$TAR_GZ" ]; then
+  echo "Missing macOS DMG or updater archive" >&2
+  exit 1
 fi
 
 ls -la "$ASSET_ROOT"

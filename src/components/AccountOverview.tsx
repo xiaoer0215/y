@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { useGroupDisplayName } from "../lib/site-content";
 import { getLocale, t, useLocale } from "../lib/i18n";
 import {
@@ -348,7 +349,7 @@ export default function AccountOverview({
             </button>
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 text-[11px]">
-            <span className="text-slate-500">www.uocode.com</span>
+            <span className="text-slate-500">{new URL(BRAND.siteUrl).hostname}</span>
             <span
               className={
                 networkState === "reachable"
@@ -366,7 +367,7 @@ export default function AccountOverview({
               {t("accountCenter.clientVersion")}
             </span>
             <span className="font-mono text-slate-500">
-              Uocode Client v{version}
+              {BRAND.productName} v{version}
             </span>
           </div>
         </div>

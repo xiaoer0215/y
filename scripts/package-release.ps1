@@ -12,7 +12,7 @@ if ($Tag -cne "v$($package.version)" -or $tauri.version -cne $package.version) {
 }
 
 $buildRoot = Join-Path $repoRoot 'src-tauri/target/release'
-$installer = Join-Path $buildRoot "bundle/nsis/AI Helper_$($package.version)_x64-setup.exe"
+$installer = Join-Path $buildRoot "bundle/nsis/$($tauri.productName)_$($package.version)_x64-setup.exe"
 $binary = Join-Path $buildRoot 'ai-helper.exe'
 foreach ($required in @($installer, $binary)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
@@ -23,8 +23,9 @@ foreach ($required in @($installer, $binary)) {
 $assetRoot = Join-Path $repoRoot "release/$Tag"
 $standaloneRoot = Join-Path $assetRoot 'standalone'
 New-Item -ItemType Directory -Force -Path $standaloneRoot | Out-Null
-$installerName = "AI-Helper-$Tag-Windows-x64-Setup.exe"
-$zipName = "AI-Helper-$Tag-Windows-x64-Standalone.zip"
+$slug = $tauri.productName -replace '[^A-Za-z0-9.-]+', '-'
+$installerName = "$slug-$Tag-Windows-x64-Setup.exe"
+$zipName = "$slug-$Tag-Windows-x64-Standalone.zip"
 Copy-Item -LiteralPath $installer -Destination (Join-Path $assetRoot $installerName)
 Copy-Item -LiteralPath $binary -Destination (Join-Path $standaloneRoot 'ai-helper.exe')
 Copy-Item -LiteralPath (Join-Path $repoRoot 'LICENSE') -Destination (Join-Path $standaloneRoot 'LICENSE.txt')
@@ -53,7 +54,9 @@ if ($hasSig) {
     }
 
     # 国内高速 GitHub 反代镜像，彻底解决无 VPN 环境下直连 objects.githubusercontent.com 出现丢包、超时或无法下载的问题
-    $downloadUrl = "https://ghfast.top/https://github.com/TF49/AI-Helper/releases/download/$Tag/$installerName"
+    $repository = $env:GITHUB_REPOSITORY
+    if (-not $repository) { throw 'GITHUB_REPOSITORY is required for release URLs.' }
+    $downloadUrl = "https://github.com/$repository/releases/download/$Tag/$installerName"
 
     $latestManifest = [ordered]@{
         version = $package.version
@@ -67,7 +70,7 @@ if ($hasSig) {
         }
     }
 
-    $latestJsonPath = Join-Path $assetRoot 'latest.json'
+    $latestJsonPath = Join-Path $assetRoot 'windows-latest.json'
     $latestJsonContent = $latestManifest | ConvertTo-Json -Depth 5
     [System.IO.File]::WriteAllText($latestJsonPath, $latestJsonContent, $utf8NoBom)
     Write-Host "Generated update manifest: $latestJsonPath"
@@ -78,7 +81,7 @@ if ($hasSig) {
 $filesToCheck = @($installerName, $zipName)
 if ($hasSig) {
     $filesToCheck += $sigName
-    $filesToCheck += 'latest.json'
+    $filesToCheck += 'windows-latest.json'
 }
 
 $checksums = foreach ($name in $filesToCheck) {

@@ -13,7 +13,7 @@ fn normalize(raw: &str) -> Option<String> {
         || url.query().is_some()
         || url.fragment().is_some()
         || url.host_str().is_none()
-        || matches!(url.host_str(), Some("www.uocode.com" | "uocode.com"))
+        || crate::auth::is_site_host(url.host_str())
     {
         return None;
     }
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn accepts_published_formats_without_homepage_or_credentials() {
-        let raw = json!(["https://www.uocode.com/", "https://user:password@api.example.test", "bad", {"url":"https://api.example.test/"}, "https://api.example.test", "https://backup.example.test/v1"]);
+        let raw = json!([crate::auth::BASE_URL, "https://user:password@api.example.test", "bad", {"url":"https://api.example.test/"}, "https://api.example.test", "https://backup.example.test/v1"]);
         assert_eq!(
             parse(&raw),
             vec!["https://api.example.test", "https://backup.example.test/v1"]
@@ -148,7 +148,7 @@ mod tests {
             "https://api.example.test",
             "https://api.example.test.evil.test"
         ));
-        assert!(normalize("https://www.uocode.com/v1").is_none());
+        assert!(normalize(&format!("{}/v1", crate::auth::BASE_URL)).is_none());
         assert!(normalize("https://api.example.test?key=secret").is_none());
     }
 }

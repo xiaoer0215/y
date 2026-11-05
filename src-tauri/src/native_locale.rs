@@ -18,7 +18,8 @@ pub fn catalog(locale: &str) -> Result<serde_json::Value, String> {
         "vi" => include_str!("../../src/locales/vi.json"),
         _ => return Err("Unsupported locale".into()),
     };
-    serde_json::from_str(json).map_err(|error| error.to_string())
+    serde_json::from_str(&json.replace("Uocode Client", env!("AI_HELPER_BRAND_NAME")))
+        .map_err(|error| error.to_string())
 }
 
 pub fn text<'a>(catalog: &'a serde_json::Value, key: &str) -> Result<&'a str, String> {
@@ -34,7 +35,7 @@ pub fn window_title(locale: Option<&str>, key: &str) -> String {
     labels
         .ok()
         .and_then(|labels| labels.get(key)?.as_str().map(str::to_owned))
-        .unwrap_or_else(|| "Uocode Client".into())
+        .unwrap_or_else(|| env!("AI_HELPER_BRAND_NAME").into())
 }
 
 #[tauri::command]

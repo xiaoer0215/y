@@ -2,75 +2,37 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*.*.*'  # 匹配 v1.0.0, v1.2.3 等格式
-  workflow_dispatch:  # 保留手动触发选项
+    tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: ai-helper-release
+  group: release-${{ github.repository }}
   cancel-in-progress: false
 
-jobs:
-  windows:
-    name: Build Windows x64
-    runs-on: windows-2022
-    defaults:
-      run:
-        shell: pwsh
-    outputs:
-      tag: ${{ steps.package.outputs.tag }}
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: '22'
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.12.3
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: '1.95'
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Test backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
-      - name: Build installer
-        env:
-          AI_HELPER_BRAND_ID: ${{ github.event.repository.name == 'u' && 'uocode' || github.event.repository.name == 'n' && 'nez-api' || 'yusr' }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          pnpm select:brand -- $env:AI_HELPER_BRAND_ID
-          pnpm tauri build --bundles nsis
-      - name: Package release
-        id: package
-        run: |
-          $package = Get-Content -LiteralPath package.json -Encoding UTF8 -Raw | ConvertFrom-Json
-          $tag = "v$($package.version)"
-          ./scripts/package-release.ps1 -Tag $tag
-          "tag=$tag" >> $env:GITHUB_OUTPUT
-      - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: windows-assets
-          path: release/${{ steps.package.outputs.tag }}/*
-          if-no-files-found: error
+env:
+  AI_HELPER_BRAND_ID: ${{ github.event.repository.name == 'u' && 'uocode' || github.event.repository.name == 'n' && 'nez-api' || 'yusr' }}
 
-  macos:
-    name: Build macOS (${{ matrix.target }})
-    runs-on: macos-14
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
     strategy:
       fail-fast: false
       matrix:
-        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+        include:
+          - platform: windows-x86_64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+          - platform: darwin-aarch64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - platform: darwin-x86_64
+            os: macos-15
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -81,72 +43,66 @@ jobs:
           version: 10.12.3
       - uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: '1.95'
+          toolchain: '1.95.0'
           targets: ${{ matrix.target }}
-      - name: Add Rust target
-        run: rustup target add ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build DMG installer
+          key: ${{ matrix.platform }}
+      - run: pnpm install --frozen-lockfile
+      - name: Select and validate brand
+        run: |
+          node scripts/select-brand.mjs
+          pnpm validate:brands
+          pnpm typecheck
+      - name: Test Windows backend
+        if: runner.os == 'Windows'
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --lib
+      - name: Build Windows installer
+        if: runner.os == 'Windows'
         env:
-          AI_HELPER_BRAND_ID: ${{ github.event.repository.name == 'u' && 'uocode' || github.event.repository.name == 'n' && 'nez-api' || 'yusr' }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: |
-          pnpm select:brand -- $env:AI_HELPER_BRAND_ID
-          pnpm tauri build --target ${{ matrix.target }} --bundles dmg
-      - name: Package macOS release
-        id: package
-        run: |
-          chmod +x ./scripts/package-macos.sh
-          ./scripts/package-macos.sh "" "${{ matrix.target }}"
-          package_ver=$(node -p "require('./package.json').version")
-          echo "tag=v${package_ver}" >> $GITHUB_OUTPUT
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v7
+        run: pnpm tauri build --bundles nsis
+      - name: Build macOS packages
+        if: runner.os == 'macOS'
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --target ${{ matrix.target }} --bundles app,dmg
+      - name: Collect packages
+        run: node scripts/package-client.mjs ${{ matrix.platform }} ${{ matrix.target }}
+      - uses: actions/upload-artifact@v7
         with:
-          name: macos-assets-${{ matrix.target }}
-          path: release/${{ steps.package.outputs.tag }}/*
+          name: client-${{ matrix.platform }}
+          path: release/assets/*
           if-no-files-found: error
+          retention-days: 30
 
   publish:
     name: Publish Release
-    needs: [windows, macos]
+    needs: build
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
-      - name: Download all artifacts
-        uses: actions/download-artifact@v7
+      - uses: actions/setup-node@v6
         with:
-          path: artifacts
-      - name: Prepare release directory
-        id: prep
-        run: |
-          mkdir -p release_assets
-          # 将所有子目录下载的文件合并到 release_assets
-          find artifacts -type f -exec cp {} release_assets/ \;
-          package_ver=$(node -p "require('./package.json').version")
-          tag="v${package_ver}"
-          echo "tag=$tag" >> $GITHUB_OUTPUT
-          ls -la release_assets/
-      - name: Publish release to GitHub
+          node-version: '22'
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: client-*
+          path: release/assets
+          merge-multiple: true
+      - name: Verify packages and generate update manifest
+        run: node scripts/package-client.mjs manifest
+      - name: Publish packages
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.prep.outputs.tag }}
         run: |
-          tag="${RELEASE_TAG}"
-          notes="docs/releases/${tag}.md"
-          if [ ! -f "$notes" ]; then
-            echo "Missing release notes: $notes"
-            exit 1
+          version=$(node -p "require('./package.json').version")
+          tag="v${version}"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "${GITHUB_REPOSITORY##*/} $tag" --notes-file "docs/releases/$tag.md" --draft
           fi
-          assets=(release_assets/*)
-          if [ ${#assets[@]} -eq 0 ]; then
-            echo "No release assets found"
-            exit 1
-          fi
-          gh release create "$tag" "${assets[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "AI Helper $tag" --notes-file "$notes" --draft
-          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          gh release upload "$tag" release/assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --notes-file "docs/releases/$tag.md" --draft=false --latest

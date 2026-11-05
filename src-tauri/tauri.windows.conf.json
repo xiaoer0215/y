@@ -16,5 +16,6 @@
       }
     ]
   },
-  "productName": "Uocode Client"
+  "productName": "Uocode Client",
+  "identifier": "com.uocode.helper"
 }

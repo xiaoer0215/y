@@ -18,7 +18,7 @@ https://www.uocode.com/downloads/uocode/latest.json
 构建某个启用版本时设置品牌 ID，源码不需要改动：
 
 ```powershell
-$env:AI_HELPER_BRAND_ID = "uocode"
+node scripts/select-brand.mjs uocode
 pnpm tauri build
 ```
 
@@ -30,4 +30,10 @@ Uocode Client/0.5.18 (Windows)
 
 网站现有登录设备解析器会自动显示软件名、系统和版本。由于 `𝓝ě𝔃 𝓐𝓹ǐ` 使用装饰字符，HTTP User-Agent 采用 ASCII 名称 `Nez Api`；客户端品牌显示名仍可使用原始名称。
 
-GitHub 发布流水线当前只构建默认的 Uocode 版本。完整多站点构建还需要把网站/API 域名、Tauri 产品名、图标、更新地址和 Release 资产命名都接到品牌配置；仅切换登录设备标识不构成独立网站发行版。
+GitHub 发布流水线按仓库名称选择品牌：`xiaoer0215/u` 对应 Uocode，`xiaoer0215/n` 对应 Nez Api，`xiaoer0215/y` 对应 Yusr.ai。三个私有仓库分别构建 Windows x64 安装版、便携版，以及 macOS Apple Silicon / Intel 安装包。
+
+每个仓库分别配置 `TAURI_SIGNING_PRIVATE_KEY` 和 `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` Actions Secrets。私钥保存在发布者本地忽略目录 `output/release-signing`，不可提交。
+
+当前应用自动更新开关关闭。私有 Release 下载需要 GitHub 授权；正式启用公开更新前，需把签名安装包和 `latest.json` 部署到对应品牌网站并验证下载。禁止将私有仓库令牌编译到客户端。
+
+macOS 包包含 Tauri 更新签名，但尚未做 Apple Developer 签名和公证，首次打开可能需要在系统“隐私与安全性”中允许。

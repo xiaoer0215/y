@@ -1,3 +1,4 @@
+import { BRAND } from "../../lib/brand";
 import { t, useLocale } from "../../lib/i18n";
 import { useEffect, useState, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
@@ -222,7 +223,7 @@ export default function AccountEnrollment({
                   type="button"
                   className="text-blue-500"
                   onClick={() =>
-                    void openUrl("https://www.uocode.com/user-agreement")
+                    void openUrl(`${BRAND.siteUrl}/user-agreement`)
                   }
                 >
                   {t("ui.8f31a480bd68")}
@@ -233,7 +234,7 @@ export default function AccountEnrollment({
                   type="button"
                   className="text-blue-500"
                   onClick={() =>
-                    void openUrl("https://www.uocode.com/privacy-policy")
+                    void openUrl(`${BRAND.siteUrl}/privacy-policy`)
                   }
                 >
                   {t("ui.a09ce12ef35b")}

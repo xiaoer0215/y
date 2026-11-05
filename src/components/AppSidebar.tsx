@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { t, useLocale } from "../lib/i18n";
 import {
   Boxes,
@@ -107,7 +108,7 @@ export default function AppSidebar({
     >
       <div className={cn("mb-4 px-3", collapsed && "px-0 text-center")}>
         <div className="text-[10px] font-bold tracking-[0.22em] text-blue-500">
-          {collapsed ? "U" : "UOCODE CLIENT"}
+          {collapsed ? BRAND.userAgentName.slice(0, 1) : BRAND.productName}
         </div>
         {!collapsed && (
           <p className="mt-1.5 text-xs text-slate-400 dark:text-gray-500">

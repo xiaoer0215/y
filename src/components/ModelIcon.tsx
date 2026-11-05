@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { t, useLocale } from "../lib/i18n";
 import { useState } from "react";
 import { Bot } from "lucide-react";
@@ -29,7 +30,7 @@ export default function ModelIcon({
   const url =
     icon && /^(https:\/\/|\/[^/])/.test(icon)
       ? icon.startsWith("/")
-        ? `https://www.uocode.com${icon}`
+        ? `${BRAND.siteUrl}${icon}`
         : icon
       : "";
   let mark;

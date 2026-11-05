@@ -1,3 +1,4 @@
+import { APP_VERSION, BRAND } from "./lib/brand";
 import { t, useLocale } from "./lib/i18n";
 import { useEffect, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
@@ -308,9 +309,9 @@ function AppContent() {
     if (isTauri) {
       void getVersion()
         .then((v) => setAppVersion(v))
-        .catch(() => setAppVersion("1.0.32"));
+        .catch(() => setAppVersion(APP_VERSION));
     } else {
-      setAppVersion("1.0.32 (Web Preview)");
+      setAppVersion(APP_VERSION);
     }
   }, []);
 
@@ -467,11 +468,9 @@ function AppContent() {
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1 leading-none">
                 <span className="text-xs font-bold tracking-wider text-slate-900 dark:text-white">
-                  Uocode
+                  {BRAND.productName}
                 </span>
-                <span className="text-xs font-semibold text-slate-500 dark:text-gray-400">
-                  Client
-                </span>
+
               </div>
               <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-500 border border-slate-200 dark:bg-white/5 dark:text-gray-400 dark:border-white/10">
                 v{appVersion}
@@ -845,7 +844,7 @@ function AppContent() {
                 ? "acciowork"
                 : "chatgpt"
         }
-        currentUrl="https://www.uocode.com/"
+        currentUrl={BRAND.siteUrl}
         currentKey=""
         currentModel={
           lastAgentTab === "claude"

@@ -6,6 +6,8 @@
       "enabled": true,
       "productName": "Uocode Client",
       "userAgentName": "Uocode Client",
+      "repository": "xiaoer0215/u",
+      "updaterPublicKey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhFMTZEN0U1NzJGQzRBNzAKUldSd1N2eHk1ZGNXanEvWjEvTnd1Q2VKMVV2bENvL1E0T2llbWh4eUx5dERRRVJGalhBUkM4blYK",
       "siteUrl": "https://www.uocode.com",
       "apiUrl": "https://www.uocode.com",
       "updateManifestUrl": "https://www.uocode.com/downloads/uocode/latest.json"
@@ -15,6 +17,8 @@
       "enabled": true,
       "productName": "𝓝ě𝔃 𝓐𝓹ǐ",
       "userAgentName": "Nez Api",
+      "repository": "xiaoer0215/n",
+      "updaterPublicKey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZBODU3MTBEMjFFN0ZEM0IKUldRNy9lY2hEWEdGYXB3VllmQTFobzBXaEFNbFRVTUNJUTFTUHdaanBSd0liSE1wS2RveFo2QmgK",
       "siteUrl": "https://ne.aineapi.com",
       "apiUrl": "https://ne.aineapi.com",
       "updateManifestUrl": "https://ne.aineapi.com/downloads/nez-api/latest.json"
@@ -24,6 +28,8 @@
       "enabled": true,
       "productName": "Yusr.ai",
       "userAgentName": "Yusr.ai",
+      "repository": "xiaoer0215/y",
+      "updaterPublicKey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzRTVBM0NBN0IzMEE4QUEKUldTcXFEQjd5cVBsRTVwVXhwcUZvWUxIeFRkYytPK080MkVjb2RZSWtPRzQ4QTZNd3ZURHFSb3cK",
       "siteUrl": "https://www.yusr.ai",
       "apiUrl": "https://www.yusr.ai",
       "updateManifestUrl": "https://www.yusr.ai/downloads/yusr/latest.json"

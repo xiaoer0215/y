@@ -1,3 +1,4 @@
+import { BRAND } from "./brand";
 import { getLocale, t } from "./i18n";
 import { invoke as tauriInvoke, Channel } from "@tauri-apps/api/core";
 import { toast } from "sonner";
@@ -333,7 +334,7 @@ function getMockResponse<T>(cmd: string, _args?: Record<string, unknown>): T {
     case "request_topup_payment":
       return {
         success: true,
-        url: "https://www.uocode.com/wallet",
+        url: `${BRAND.siteUrl}/wallet`,
       } as unknown as T;
     case "calculate_topup_amount":
       return String(_args?.amount ?? 0) as unknown as T;

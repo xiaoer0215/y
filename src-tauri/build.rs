@@ -48,6 +48,15 @@ fn configure_brand_identity() {
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
+            let repo = std::env::var("GITHUB_REPOSITORY").ok()?;
+            match repo.rsplit('/').next()? {
+                "u" => Some("uocode".into()),
+                "n" => Some("nez-api".into()),
+                "y" => Some("yusr".into()),
+                _ => None,
+            }
+        })
+        .or_else(|| {
             document
                 .get("default")
                 .and_then(serde_json::Value::as_str)
@@ -75,10 +84,25 @@ fn configure_brand_identity() {
         .filter(|value| {
             !value.trim().is_empty()
                 && value.is_ascii()
-                && value.bytes().all(|byte| byte.is_ascii_graphic() || byte == b' ')
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_graphic() || byte == b' ')
         })
         .unwrap_or_else(|| panic!("brand has no ASCII-safe userAgentName: {requested}"));
     println!("cargo:rustc-env=AI_HELPER_BRAND_ID={requested}");
     println!("cargo:rustc-env=AI_HELPER_BRAND_NAME={name}");
     println!("cargo:rustc-env=AI_HELPER_BRAND_USER_AGENT_NAME={user_agent_name}");
+    for (field, variable) in [
+        ("siteUrl", "AI_HELPER_BRAND_SITE_URL"),
+        ("repository", "AI_HELPER_BRAND_REPOSITORY"),
+        ("updateManifestUrl", "AI_HELPER_BRAND_UPDATE_URL"),
+    ] {
+        let value = brand
+            .get(field)
+            .and_then(serde_json::Value::as_str)
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| panic!("brand is missing {field}: {requested}"));
+        println!("cargo:rustc-env={variable}={value}");
+    }
+    println!("cargo:rerun-if-env-changed=GITHUB_REPOSITORY");
 }

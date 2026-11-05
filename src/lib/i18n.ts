@@ -4,6 +4,7 @@ import { getPreferences, usePreferences } from "./preferences";
 import { isLocale } from "./locales";
 import { useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { brandText, BRAND } from "./brand";
 
 const files = import.meta.glob<Record<string, string>>(
   [
@@ -25,7 +26,10 @@ for (const [path, translation] of Object.entries(files)) {
     .replace(/\.json$/, "");
   if (isLocale(code))
     resources[code] = {
-      translation: { ...resources[code]?.translation, ...translation },
+      translation: {
+        ...resources[code]?.translation,
+        ...Object.fromEntries(Object.entries(translation).map(([key, value]) => [key, brandText(value)])),
+      },
     };
 }
 
@@ -57,6 +61,7 @@ export function useLocale(): string {
 export function LocaleSync() {
   const { preferences } = usePreferences();
   useEffect(() => {
+    document.title = BRAND.productName;
     void i18n.changeLanguage(preferences.locale);
     document.documentElement.lang = preferences.locale;
     if ("__TAURI_INTERNALS__" in window) {

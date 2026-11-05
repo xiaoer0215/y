@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { t, useLocale, getLocale } from "../lib/i18n";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -896,7 +897,7 @@ export function ChannelGroupMonitor({
           {/* 官方监控网页外链 */}
           <button
             type="button"
-            onClick={() => void openUrl("https://www.uocode.com/status-board")}
+            onClick={() => void openUrl(`${BRAND.siteUrl}/status-board`)}
             className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-slate-600 hover:text-slate-900 dark:text-gray-300 dark:hover:text-white bg-slate-100/80 hover:bg-slate-200/80 dark:bg-white/5 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/10 transition-all cursor-pointer shadow-2xs"
             title={t("ui.521838087afe")}
           >
@@ -982,7 +983,7 @@ export function ChannelGroupMonitor({
               <button
                 type="button"
                 onClick={() =>
-                  void openUrl("https://www.uocode.com/status-board")
+                  void openUrl(`${BRAND.siteUrl}/status-board`)
                 }
                 className="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-700 dark:text-gray-300 hover:bg-slate-50 dark:hover:bg-white/10 text-xs font-medium transition-all cursor-pointer flex items-center gap-1"
               >
@@ -2307,7 +2308,7 @@ export function ChannelGroupMonitor({
                     switchModalState.errorMessage.includes("无权") ? (
                       <button
                         type="button"
-                        onClick={() => void openUrl("https://www.uocode.com")}
+                        onClick={() => void openUrl(BRAND.siteUrl)}
                         className="underline text-[11px] font-semibold text-rose-700 dark:text-rose-300 flex-shrink-0 hover:text-rose-900 cursor-pointer"
                       >
                         {t("ui.6f99aae3bca8")}

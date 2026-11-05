@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import {
   configuredEndpoint,
   parseApiEndpoints,
@@ -1099,7 +1100,7 @@ export function InitializationModal({
                             status:
                               checkpoints.endpoint_ping ||
                               (step1Status === "success" ? "done" : "pending"),
-                            detail: "https://www.uocode.com/ (GET)",
+                            detail: `${BRAND.siteUrl}/ (GET)`,
                           },
                           {
                             key: "latency_eval",
@@ -1121,7 +1122,7 @@ export function InitializationModal({
                             {t("ui.bb5634a004e3")}
                           </span>
                           <span className="font-mono font-medium text-slate-800 dark:text-gray-200">
-                            https://www.uocode.com/
+                            {BRAND.siteUrl}/
                           </span>
                         </div>
 

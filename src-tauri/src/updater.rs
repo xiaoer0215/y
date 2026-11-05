@@ -11,19 +11,12 @@ use std::time::Duration;
 
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// 本站自托管更新元数据（第一优先级，国内直连稳定）
-const UPDATER_JSON_LOCAL_URL: &str = "https://helper.bob-api.com/downloads/latest.json";
-const UPDATER_JSON_MIRROR_URL: &str =
-    "https://ghfast.top/https://github.com/TF49/AI-Helper/releases/latest/download/latest.json";
-const UPDATER_JSON_MIRROR_BACKUP_URL: &str =
-    "https://gh-proxy.com/https://github.com/TF49/AI-Helper/releases/latest/download/latest.json";
-const UPDATER_JSON_MIRROR_BACKUP2_URL: &str =
-    "https://ghproxy.net/https://github.com/TF49/AI-Helper/releases/latest/download/latest.json";
-const UPDATER_JSON_OFFICIAL_URL: &str =
-    "https://github.com/TF49/AI-Helper/releases/latest/download/latest.json";
-const JSDELIVR_URL: &str = "https://cdn.jsdelivr.net/gh/TF49/AI-Helper@main/package.json";
-const GITHUB_RAW_MIRROR_URL: &str =
-    "https://ghfast.top/https://raw.githubusercontent.com/TF49/AI-Helper/main/package.json";
-const GITHUB_API_URL: &str = "https://api.github.com/repos/TF49/AI-Helper/releases/latest";
+const UPDATER_JSON_LOCAL_URL: &str = env!("AI_HELPER_BRAND_UPDATE_URL");
+const GITHUB_API_URL: &str = concat!(
+    "https://api.github.com/repos/",
+    env!("AI_HELPER_BRAND_REPOSITORY"),
+    "/releases/latest"
+);
 
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const WINDOWS_UPDATE_INSTALLER_ARGS: [&str; 4] = ["/P", "/R", "/UPDATE", "/ARGS"];
@@ -96,11 +89,6 @@ struct GitHubRelease {
     body: Option<String>,
     #[serde(default)]
     published_at: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct PackageJson {
-    version: String,
 }
 
 /// 解析 host 和 port
@@ -383,75 +371,33 @@ fn compare_versions(latest: &str, current: &str) -> bool {
 /// 获取全平台候选下载镜像源列表
 pub fn get_candidate_mirrors(version: &str) -> Vec<CandidateMirror> {
     let clean_ver = version.trim_start_matches('v');
-    #[cfg(target_os = "macos")]
-    let installer_name = format!("AI-Helper-v{}-macOS.dmg", clean_ver);
+    let slug = env!("AI_HELPER_BRAND_USER_AGENT_NAME").replace(' ', "-");
+    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+    let suffix = "macOS-aarch64.dmg";
+    #[cfg(all(target_os = "macos", not(target_arch = "aarch64")))]
+    let suffix = "macOS-x64.dmg";
     #[cfg(not(target_os = "macos"))]
-    let installer_name = format!("AI-Helper-v{}-Windows-x64-Setup.exe", clean_ver);
-
-    let local_mirror = CandidateMirror {
-        name: "本站直链 (helper.bob-api.com)".to_string(),
-        url: format!("https://helper.bob-api.com/downloads/{}", installer_name),
-    };
-    let oss_mirror = CandidateMirror {
-        name: "阿里云 OSS 高速镜像".to_string(),
-        url: format!(
-            "https://bobdong.oss-cn-beijing.aliyuncs.com/desktop/{}",
-            installer_name
-        ),
-    };
-    let official = CandidateMirror {
-        name: "GitHub 官方直链 (带 VPN 极速)".to_string(),
-        url: format!(
-            "https://github.com/TF49/AI-Helper/releases/download/v{}/{}",
-            clean_ver, installer_name
-        ),
-    };
-    let ghfast = CandidateMirror {
-        name: "国内高速镜像 1 (ghfast)".to_string(),
-        url: format!(
-            "https://ghfast.top/https://github.com/TF49/AI-Helper/releases/download/v{}/{}",
-            clean_ver, installer_name
-        ),
-    };
-    let gh_proxy = CandidateMirror {
-        name: "国内高速镜像 2 (gh-proxy)".to_string(),
-        url: format!(
-            "https://gh-proxy.com/https://github.com/TF49/AI-Helper/releases/download/v{}/{}",
-            clean_ver, installer_name
-        ),
-    };
-    let ghproxy_net = CandidateMirror {
-        name: "国内高速镜像 3 (ghproxy.net)".to_string(),
-        url: format!(
-            "https://ghproxy.net/https://github.com/TF49/AI-Helper/releases/download/v{}/{}",
-            clean_ver, installer_name
-        ),
-    };
-
-    // 本站直链与阿里云 OSS 高速镜像始终位于前列（国内直连，千兆带宽）
-    // 若检测到有效代理（VPN 已开启），官方 GitHub 提升优先级；否则国内镜像次之
-    if get_upstream_proxy_url().is_some() {
-        vec![
-            local_mirror,
-            oss_mirror,
-            official,
-            gh_proxy,
-            ghfast,
-            ghproxy_net,
-        ]
-    } else {
-        vec![
-            local_mirror,
-            oss_mirror,
-            ghfast,
-            gh_proxy,
-            ghproxy_net,
-            official,
-        ]
-    }
+    let suffix = "Windows-x64-Setup.exe";
+    let installer_name = format!("{slug}-v{clean_ver}-{suffix}");
+    let base = UPDATER_JSON_LOCAL_URL
+        .rsplit_once('/')
+        .expect("update URL has directory")
+        .0;
+    vec![
+        CandidateMirror {
+            name: env!("AI_HELPER_BRAND_NAME").into(),
+            url: format!("{base}/{installer_name}"),
+        },
+        CandidateMirror {
+            name: "GitHub".into(),
+            url: format!(
+                "https://github.com/{}/releases/download/v{clean_ver}/{installer_name}",
+                env!("AI_HELPER_BRAND_REPOSITORY")
+            ),
+        },
+    ]
 }
 
-/// 检查更新对外主入口：按优先级 fallback 并附带多镜像候选列表
 pub async fn check_for_updates() -> Result<UpdateInfo, String> {
     let mut info = check_for_updates_internal().await?;
     info.proxy_url = get_upstream_proxy_url();
@@ -460,84 +406,13 @@ pub async fn check_for_updates() -> Result<UpdateInfo, String> {
 }
 
 async fn check_for_updates_internal() -> Result<UpdateInfo, String> {
-    let has_proxy = get_upstream_proxy_url().is_some();
-    let mut fallback_no_update: Option<UpdateInfo> = None;
-
-    macro_rules! try_check {
-        ($expr:expr) => {
-            match $expr.await {
-                Ok(info) => {
-                    if info.has_update {
-                        return Ok(info);
-                    }
-                    if fallback_no_update.is_none() {
-                        fallback_no_update = Some(info);
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Update check attempt failed: {}", e);
-                }
-            }
-        };
+    match check_updater_json(UPDATER_JSON_LOCAL_URL, env!("AI_HELPER_BRAND_NAME")).await {
+        Ok(info) => Ok(info),
+        Err(error) => {
+            log::warn!("Brand update manifest unavailable: {}", error);
+            check_github_api().await
+        }
     }
-
-    // 0. 优先尝试本站自托管 latest.json（国内直连稳定，无需代理）
-    try_check!(check_updater_json(
-        UPDATER_JSON_LOCAL_URL,
-        "updater.json (本站 helper.bob-api.com)",
-    ));
-
-    // 如果开启了 VPN 代理，优先尝试 GitHub 官方更新源，避免被国内镜像防火墙拦截
-    if has_proxy {
-        try_check!(check_updater_json(
-            UPDATER_JSON_OFFICIAL_URL,
-            "updater.json (GitHub 官方直连)",
-        ));
-    }
-
-    // 1. ghfast.top 镜像 updater.json (国内高速通道)
-    try_check!(check_updater_json(
-        UPDATER_JSON_MIRROR_URL,
-        "updater.json (ghfast)",
-    ));
-
-    // 2. 备用 gh-proxy.com 镜像 updater.json
-    try_check!(check_updater_json(
-        UPDATER_JSON_MIRROR_BACKUP_URL,
-        "updater.json (gh-proxy)",
-    ));
-
-    // 3. 备用 ghproxy.net 镜像 updater.json
-    try_check!(check_updater_json(
-        UPDATER_JSON_MIRROR_BACKUP2_URL,
-        "updater.json (ghproxy.net)",
-    ));
-
-    // 4. 官方 GitHub updater.json (适合海外用户或已配置系统代理/VPN环境)
-    if !has_proxy {
-        try_check!(check_updater_json(
-            UPDATER_JSON_OFFICIAL_URL,
-            "updater.json (GitHub)",
-        ));
-    }
-
-    // 5. 回退 jsDelivr CDN (package.json)
-    try_check!(check_static_url(JSDELIVR_URL, "jsDelivr"));
-
-    // 6. 回退 GitHub Raw 镜像 (package.json)
-    try_check!(check_static_url(
-        GITHUB_RAW_MIRROR_URL,
-        "GitHub Raw (ghfast)"
-    ));
-
-    // 7. 回退 GitHub Releases API
-    try_check!(check_github_api());
-
-    if let Some(info) = fallback_no_update {
-        return Ok(info);
-    }
-
-    Err("所有更新检查源均尝试失败，请检查网络或配置代理".to_string())
 }
 
 async fn check_updater_json(url: &str, source_name: &str) -> Result<UpdateInfo, String> {
@@ -584,7 +459,8 @@ async fn check_updater_json(url: &str, source_name: &str) -> Result<UpdateInfo, 
     }
 
     let download_url = format!(
-        "https://github.com/TF49/AI-Helper/releases/tag/v{}",
+        "https://github.com/{}/releases/tag/v{}",
+        env!("AI_HELPER_BRAND_REPOSITORY"),
         latest_version
     );
 
@@ -654,69 +530,6 @@ async fn check_github_api() -> Result<UpdateInfo, String> {
     })
 }
 
-async fn check_static_url(url: &str, source_name: &str) -> Result<UpdateInfo, String> {
-    let client = create_client(REQUEST_TIMEOUT)?;
-    log::info!("Checking for updates via {}...", source_name);
-
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "{} returned status: {}",
-            source_name,
-            response.status()
-        ));
-    }
-
-    let package_json: PackageJson = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse package.json: {}", e))?;
-
-    let latest_version = package_json.version.trim_start_matches('v').to_string();
-    let current_version = CURRENT_VERSION.to_string();
-    let has_update = compare_versions(&latest_version, &current_version);
-
-    if has_update {
-        log::info!(
-            "New version found ({}): {} (Current: {})",
-            source_name,
-            latest_version,
-            current_version
-        );
-    } else {
-        log::info!(
-            "Up to date ({}): {} (Matches {})",
-            source_name,
-            current_version,
-            latest_version
-        );
-    }
-
-    let download_url = "https://github.com/TF49/AI-Helper/releases/latest".to_string();
-    let release_notes = format!(
-        "New version detected via {}. Please check release page for details.",
-        source_name
-    );
-
-    Ok(UpdateInfo {
-        current_version,
-        latest_version,
-        has_update,
-        download_url,
-        release_notes,
-        published_at: String::new(),
-        source: Some(source_name.to_string()),
-        proxy_url: None,
-        candidate_mirrors: Vec::new(),
-    })
-}
-
-/// 多源容灾自动下载并静默启动更新安装包
 pub async fn download_and_install_update(
     version: String,
     on_event: tauri::ipc::Channel<UpdateDownloadEvent>,
@@ -967,14 +780,15 @@ mod tests {
     #[test]
     fn test_get_candidate_mirrors() {
         let mirrors = get_candidate_mirrors("1.0.32");
-        assert_eq!(mirrors.len(), 6);
-        #[cfg(target_os = "macos")]
-        let installer_name = "AI-Helper-v1.0.32-macOS.dmg";
-        #[cfg(not(target_os = "macos"))]
-        let installer_name = "AI-Helper-v1.0.32-Windows-x64-Setup.exe";
+        assert_eq!(mirrors.len(), 2);
+        let prefix = format!(
+            "{}-v1.0.32-",
+            env!("AI_HELPER_BRAND_USER_AGENT_NAME").replace(' ', "-")
+        );
         for m in &mirrors {
-            assert!(m.url.contains(installer_name));
+            assert!(m.url.contains(&prefix));
         }
-        assert!(mirrors.iter().any(|m| m.name.contains("阿里云 OSS")));
+        assert!(mirrors[0].url.starts_with(env!("AI_HELPER_BRAND_SITE_URL")));
+        assert!(mirrors[1].url.contains(env!("AI_HELPER_BRAND_REPOSITORY")));
     }
 }

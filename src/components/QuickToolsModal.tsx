@@ -1,3 +1,4 @@
+import { BRAND } from "../lib/brand";
 import { t, useLocale } from "../lib/i18n";
 import { useEffect, useState } from "react";
 import {
@@ -233,10 +234,10 @@ export function QuickToolsModal({
             </span>
             <div className="grid grid-cols-2 gap-2">
               <a
-                href="https://www.uocode.com"
+                href={BRAND.siteUrl}
                 onClick={(e) => {
                   e.preventDefault();
-                  void openUrl("https://www.uocode.com");
+                  void openUrl(BRAND.siteUrl);
                 }}
                 target="_blank"
                 rel="noreferrer"

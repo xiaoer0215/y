@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-pub const BOB_API_URL: &str = "https://www.uocode.com/";
+pub const BOB_API_URL: &str = env!("AI_HELPER_BRAND_SITE_URL");
 const CHECK_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(serde::Serialize, Clone, Debug)]

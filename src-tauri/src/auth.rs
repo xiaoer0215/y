@@ -11,8 +11,15 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
-pub const BASE_URL: &str = "https://www.uocode.com";
-pub const AUTH_ORIGIN: &str = "https://www.uocode.com";
+pub const BASE_URL: &str = env!("AI_HELPER_BRAND_SITE_URL");
+pub const AUTH_ORIGIN: &str = BASE_URL;
+
+pub fn is_site_host(host: Option<&str>) -> bool {
+    let site = Url::parse(BASE_URL).expect("valid brand site URL");
+    host.zip(site.host_str()).is_some_and(|(host, expected)| {
+        host.trim_start_matches("www.") == expected.trim_start_matches("www.")
+    })
+}
 
 fn desktop_user_agent() -> &'static str {
     #[cfg(target_os = "macos")]
@@ -2308,7 +2315,9 @@ pub struct TicketListQuery {
 fn validate_ticket_ref(ticket_ref: &str) -> Result<(), String> {
     if ticket_ref.is_empty()
         || ticket_ref.len() > 64
-        || !ticket_ref.bytes().all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        || !ticket_ref
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
     {
         return Err("工单编号格式无效".into());
     }
@@ -2446,9 +2455,14 @@ pub async fn upload_ticket_image(image: String, filename: String) -> Result<Stri
     let image = image.trim();
     let filename = filename.trim();
     if image.len() > 7_000_000
-        || !["data:image/png;", "data:image/jpeg;", "data:image/webp;", "data:image/gif;"]
-            .iter()
-            .any(|prefix| image.starts_with(prefix))
+        || ![
+            "data:image/png;",
+            "data:image/jpeg;",
+            "data:image/webp;",
+            "data:image/gif;",
+        ]
+        .iter()
+        .any(|prefix| image.starts_with(prefix))
     {
         return Err("仅支持 PNG、JPEG、WebP、GIF 图片，且单张不超过 5MB".into());
     }
@@ -2669,14 +2683,20 @@ fn open_payment_window_inner(
     }
     let app_handle = app.clone();
     let mut builder = tauri::WebviewWindowBuilder::new(app, "uocode-payment", initial_url)
-        .title(crate::native_locale::window_title(locale, "native.paymentTitle"))
+        .title(crate::native_locale::window_title(
+            locale,
+            "native.paymentTitle",
+        ))
         .inner_size(980.0, 760.0)
         .min_inner_size(720.0, 560.0)
         .center()
         .on_navigation(move |next| {
             let is_return = next.scheme() == "https"
-                && matches!(next.host_str(), Some("www.uocode.com" | "uocode.com"))
-                && matches!(next.path(), "/wallet" | "/usage-logs" | "/api/user/epay/return");
+                && is_site_host(next.host_str())
+                && matches!(
+                    next.path(),
+                    "/wallet" | "/usage-logs" | "/api/user/epay/return"
+                );
             if is_return {
                 let _ = app_handle.emit("wallet-refresh", ());
                 if let Some(window) = app_handle.get_webview_window("uocode-payment") {
@@ -2689,13 +2709,17 @@ fn open_payment_window_inner(
     if let Some(main) = app.get_webview_window("main") {
         builder = builder.parent(&main).map_err(|e| e.to_string())?;
     }
-    let window = builder.build().map_err(|e| format!("打开支付窗口失败: {e}"))?;
+    let window = builder
+        .build()
+        .map_err(|e| format!("打开支付窗口失败: {e}"))?;
     if let Some((action, fields)) = form {
         let action = serde_json::to_string(action.as_str()).map_err(|_| "支付地址格式错误")?;
         let script = format!(
             "document.body.innerHTML='<p style=\\\"font:14px sans-serif;padding:24px\\\">正在跳转支付…</p>';const f=document.createElement('form');f.method='post';f.action={action};for(const [k,v] of Object.entries({fields})){{const i=document.createElement('input');i.type='hidden';i.name=k;i.value=String(v);f.appendChild(i)}}document.body.appendChild(f);f.submit();",
         );
-        window.eval(script).map_err(|e| format!("加载支付表单失败: {e}"))?;
+        window
+            .eval(script)
+            .map_err(|e| format!("加载支付表单失败: {e}"))?;
     }
     Ok(())
 }
@@ -2706,8 +2730,9 @@ mod group_monitor_tests {
 
     #[test]
     fn desktop_user_agent_matches_target_os() {
-        assert!(desktop_user_agent()
-            .starts_with(concat!(env!("AI_HELPER_BRAND_USER_AGENT_NAME"), "/")));
+        assert!(
+            desktop_user_agent().starts_with(concat!(env!("AI_HELPER_BRAND_USER_AGENT_NAME"), "/"))
+        );
         assert!(desktop_user_agent().contains(env!("CARGO_PKG_VERSION")));
         #[cfg(target_os = "macos")]
         assert!(desktop_user_agent().ends_with("(macOS)"));
@@ -2718,8 +2743,10 @@ mod group_monitor_tests {
 
     #[test]
     fn oauth_callback_requires_origin_provider_state_and_code() {
-        let callback =
-            |url: &str| oauth_callback_query(&Url::parse(url).unwrap(), "github", "expected-state");
+        let callback = |url: &str| {
+            let url = url.replace("https://www.uocode.com/", &format!("{BASE_URL}/"));
+            oauth_callback_query(&Url::parse(&url).unwrap(), "github", "expected-state")
+        };
         assert_eq!(
             callback("https://www.uocode.com/oauth/github?code=fixture-code&state=expected-state"),
             Some(Ok("code=fixture-code&state=expected-state".into()))
