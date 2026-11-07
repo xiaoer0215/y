@@ -17,7 +17,6 @@ const GITHUB_API_URL: &str = concat!(
     env!("AI_HELPER_BRAND_REPOSITORY"),
     "/releases/latest"
 );
-
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 const WINDOWS_UPDATE_INSTALLER_ARGS: [&str; 4] = ["/P", "/R", "/UPDATE", "/ARGS"];
 
@@ -481,7 +480,7 @@ async fn check_updater_json(url: &str, source_name: &str) -> Result<UpdateInfo, 
 
 async fn check_github_api() -> Result<UpdateInfo, String> {
     let client = create_client(REQUEST_TIMEOUT)?;
-    log::info!("Checking for updates via GitHub API...");
+    log::info!("Checking for updates via public GitHub API...");
 
     let response = client
         .get(GITHUB_API_URL)
@@ -498,24 +497,9 @@ async fn check_github_api() -> Result<UpdateInfo, String> {
         .json()
         .await
         .map_err(|e| format!("Failed to parse release info: {}", e))?;
-
     let latest_version = release.tag_name.trim_start_matches('v').to_string();
     let current_version = CURRENT_VERSION.to_string();
     let has_update = compare_versions(&latest_version, &current_version);
-
-    if has_update {
-        log::info!(
-            "New version found (API): {} (Current: {})",
-            latest_version,
-            current_version
-        );
-    } else {
-        log::info!(
-            "Up to date (API): {} (Matches {})",
-            current_version,
-            latest_version
-        );
-    }
 
     Ok(UpdateInfo {
         current_version,
@@ -524,7 +508,7 @@ async fn check_github_api() -> Result<UpdateInfo, String> {
         download_url: release.html_url,
         release_notes: release.body.unwrap_or_default(),
         published_at: release.published_at.unwrap_or_default(),
-        source: Some("GitHub API".to_string()),
+        source: Some("GitHub Release".to_string()),
         proxy_url: None,
         candidate_mirrors: Vec::new(),
     })

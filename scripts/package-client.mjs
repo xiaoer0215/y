@@ -79,6 +79,12 @@ if (platform === "windows-x86_64") {
   verifySignature(name);
 } else if (platform === "manifest") {
   const platforms = {};
+  // Release assets remain on GitHub by default. Site mirrors can set this to
+  // their public download directory when generating the mirror manifest.
+  const assetBase = (
+    process.env.AI_HELPER_UPDATE_ASSET_BASE_URL ||
+    `https://github.com/${brand.repository}/releases/download/v${version}`
+  ).replace(/\/+$/, "");
   const packages = {
     "windows-x86_64": `${prefix}-Windows-x64-Setup.exe`,
     "darwin-aarch64": `${prefix}-macOS-aarch64.app.tar.gz`,
@@ -90,7 +96,7 @@ if (platform === "windows-x86_64") {
   for (const [platform, name] of Object.entries(packages)) {
     platforms[platform] = {
       signature: verifySignature(name),
-      url: `https://github.com/${brand.repository}/releases/download/v${version}/${name}`,
+      url: `${assetBase}/${name}`,
     };
   }
   const notes = fs.readFileSync(`docs/releases/v${version}.md`, "utf8");

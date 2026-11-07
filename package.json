@@ -1,6 +1,6 @@
 {
   "name": "ai-helper",
-  "version": "0.5.19",
+  "version": "0.5.20",
   "description": "Uocode Client - AI desktop client",
   "type": "module",
   "scripts": {
